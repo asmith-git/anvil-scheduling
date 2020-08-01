@@ -51,9 +51,7 @@ namespace asmith {
 		std::shared_ptr<TaskHandle> _handle;
 		State _state;
 	protected:
-		inline void Yield(const std::function<bool()>& condition) {
-			GetScheduler().Yield(condition);
-		}
+		void Yield(const std::function<bool()>& condition);
 	public:
 		friend Scheduler;
 		friend TaskHandle;

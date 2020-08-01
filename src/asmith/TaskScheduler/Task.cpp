@@ -59,4 +59,17 @@ namespace asmith {
 	Task::~Task() {
 
 	}
+
+	void Task::Yield(const std::function<bool()>& condition) {
+		TaskHandle* const handle = _handle.get();
+		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
+		_state = STATE_BLOCKED;
+		try {
+			handle->_scheduler.Yield(condition);
+		} catch (...) {
+			_state = STATE_EXECUTING;
+			std::rethrow_exception(std::current_exception());
+		}
+		_state = STATE_EXECUTING;
+	}
 }
