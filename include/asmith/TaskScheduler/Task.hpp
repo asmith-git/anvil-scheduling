@@ -52,6 +52,7 @@ namespace asmith {
 		State _state;
 	protected:
 		void Yield(const std::function<bool()>& condition);
+		virtual void Execute() = 0;
 	public:
 		friend Scheduler;
 		friend TaskHandle;

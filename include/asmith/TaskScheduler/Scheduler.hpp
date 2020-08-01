@@ -23,6 +23,9 @@
 #ifndef ASMITH_SCHEDULER_SCHEDULER_HPP
 #define ASMITH_SCHEDULER_SCHEDULER_HPP
 
+#include <mutex>
+#include <condition_variable>
+#include <vector>
 #include <functional>
 #include <memory>
 #include "asmith/TaskScheduler/Core.hpp"
@@ -34,6 +37,8 @@ namespace asmith {
 		typedef uint8_t Priority;
 	private:
 		friend Task;
+		friend Scheduler;
+		std::exception_ptr _exception;
 		Task& _task;
 		Scheduler& _scheduler;
 		Priority _priority;
@@ -47,6 +52,13 @@ namespace asmith {
 	};
 
 	class Scheduler {
+	private:
+		std::vector<Task*> _task_queue;
+	protected:
+		std::mutex _mutex;
+		std::condition_variable _task_queue_update;
+
+		bool ExecuteNextTask() throw();
 	public:
 		friend Task;
 		typedef uint8_t Priority;
