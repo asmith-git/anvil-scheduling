@@ -48,7 +48,7 @@ namespace asmith {
 			PRIORITY_LOW = PRIORITY_MIDDLE - (PRIORITY_MIDDLE / 2u)
 		};
 	private:
-		std::shared_ptr<TaskHandle> _handle;
+		std::shared_ptr<detail::UniqueTaskHandle> _handle;
 		State _state;
 	protected:
 		void Yield(const std::function<bool()>& condition);
@@ -61,7 +61,7 @@ namespace asmith {
 #endif
 	public:
 		friend Scheduler;
-		friend TaskHandle;
+		friend detail::UniqueTaskHandle;
 
 		Task();
 		virtual ~Task();
@@ -71,13 +71,13 @@ namespace asmith {
 		}
 
 		inline Priority GetPriority() const throw() {
-			TaskHandle* const handle = _handle.get();
+			detail::UniqueTaskHandle* const handle = _handle.get();
 			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
 			return handle->_priority;
 		}
 
 		inline Scheduler& GetScheduler() const {
-			TaskHandle* const handle = _handle.get();
+			detail::UniqueTaskHandle* const handle = _handle.get();
 			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
 			return handle->_scheduler;
 		}

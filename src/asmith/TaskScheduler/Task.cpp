@@ -26,36 +26,49 @@
 #include "asmith/TaskScheduler/Task.hpp"
 
 namespace asmith {
+
 	// TaskHandle
 
-	TaskHandle::TaskHandle(Task& task, Scheduler& scheduler, Priority priority) :
-		_task(task),
-		_scheduler(scheduler),
-		_priority(priority)
-	{}
+	TaskHandle::TaskHandle() {
+
+	}
 
 	TaskHandle::~TaskHandle() {
-		_Wait();
+
 	}
 
-	void TaskHandle::_Wait() {
-		if(_task._state == Task::STATE_INITIALISED || _task._state==Task::STATE_COMPLETE) return;
+	namespace detail {
+		// UniqueTaskHandle
 
-		_scheduler.Yield([this]()->bool {
-			return _task._state == Task::STATE_COMPLETE;
-		});
-	}
+		UniqueTaskHandle::UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority) :
+			_task(task),
+			_scheduler(scheduler),
+			_priority(priority)
+		{}
 
-	void TaskHandle::Wait() {
-		if (_task._state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
-
-		// Rethrow a caught exception
-		if (_exception) {
-			std::exception_ptr tmp = _exception;
-			_exception = std::exception_ptr();
-			std::rethrow_exception(tmp);
+		UniqueTaskHandle::~UniqueTaskHandle() {
+			_Wait();
 		}
-		_Wait();
+
+		void UniqueTaskHandle::_Wait() {
+			if (_task._state == Task::STATE_INITIALISED || _task._state == Task::STATE_COMPLETE) return;
+
+			_scheduler.Yield([this]()->bool {
+				return _task._state == Task::STATE_COMPLETE;
+			});
+		}
+
+		void UniqueTaskHandle::Wait() {
+			if (_task._state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
+
+			// Rethrow a caught exception
+			if (_exception) {
+				std::exception_ptr tmp = _exception;
+				_exception = std::exception_ptr();
+				std::rethrow_exception(tmp);
+			}
+			_Wait();
+		}
 	}
 
 	// Task
@@ -69,7 +82,7 @@ namespace asmith {
 	}
 
 	void Task::Yield(const std::function<bool()>& condition) {
-		TaskHandle* const handle = _handle.get();
+		detail::UniqueTaskHandle* const handle = _handle.get();
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
 		_state = STATE_BLOCKED;
 
@@ -155,7 +168,7 @@ namespace asmith {
 		task._state = Task::STATE_INITIALISED;
 
 		// Create handle
-		std::shared_ptr<TaskHandle> handle(new TaskHandle(task, *this, priority));
+		std::shared_ptr<detail::UniqueTaskHandle> handle(new detail::UniqueTaskHandle(task, *this, priority));
 		task._handle = handle;
 
 #if ASMITH_TASK_CALLBACKS

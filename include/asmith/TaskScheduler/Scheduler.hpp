@@ -34,22 +34,31 @@ namespace asmith {
 
 	class TaskHandle {
 	public:
-		typedef uint8_t Priority;
-	private:
-		friend Task;
-		friend Scheduler;
-		std::exception_ptr _exception;
-		Task& _task;
-		Scheduler& _scheduler;
-		Priority _priority;
-
-		TaskHandle(Task& task, Scheduler& scheduler, Priority priority);
-
-		void _Wait();
-	public:
-		~TaskHandle();
-		void Wait();
+		TaskHandle();
+		virtual ~TaskHandle();
+		virtual void Wait() = 0;
 	};
+
+	namespace detail {
+		class UniqueTaskHandle final : public TaskHandle {
+		public:
+			typedef uint8_t Priority;
+		private:
+			friend Task;
+			friend Scheduler;
+			std::exception_ptr _exception;
+			Task& _task;
+			Scheduler& _scheduler;
+			Priority _priority;
+
+			UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority);
+
+			void _Wait();
+		public:
+			virtual ~UniqueTaskHandle();
+			void Wait() final;
+		};
+	}
 
 	class Scheduler {
 	private:
