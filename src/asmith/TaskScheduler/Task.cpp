@@ -84,8 +84,10 @@ namespace asmith {
 	void Task::Yield(const std::function<bool()>& condition) {
 		detail::UniqueTaskHandle* const handle = _handle.get();
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
-		_state = STATE_BLOCKED;
 
+		if (condition()) return;
+
+		_state = STATE_BLOCKED;
 
 #if ASMITH_TASK_CALLBACKS
 		try {
@@ -123,7 +125,7 @@ namespace asmith {
 		//! \bug Scheduled tasks are left in an undefined state
 	}
 
-	bool Scheduler::ExecuteNextTask() throw() {
+	bool Scheduler::TryToExecuteTask() throw() {
 		Task* task = nullptr;
 
 		{
@@ -152,7 +154,7 @@ namespace asmith {
 		// While the condition is not met
 		while (!condition()) {
 			// Try to execute a scheduled task
-			if (!ExecuteNextTask()) {
+			if (! TryToExecuteTask()) {
 				// If no task was scheduled then block until an update
 				std::unique_lock<std::mutex> lock(_mutex);
 				_task_queue_update.wait(lock);
