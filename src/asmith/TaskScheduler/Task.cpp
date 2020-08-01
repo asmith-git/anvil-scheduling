@@ -72,6 +72,17 @@ namespace asmith {
 		TaskHandle* const handle = _handle.get();
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
 		_state = STATE_BLOCKED;
+
+
+#if ASMITH_TASK_CALLBACKS
+		try {
+			OnBlock();
+		} catch (...) {
+			_state = STATE_EXECUTING;
+			_handle->_exception = std::current_exception();
+		}
+#endif
+
 		try {
 			handle->_scheduler.Yield(condition);
 		} catch (...) {
@@ -79,6 +90,14 @@ namespace asmith {
 			std::rethrow_exception(std::current_exception());
 		}
 		_state = STATE_EXECUTING;
+
+#if ASMITH_TASK_CALLBACKS
+		try {
+			OnResume();
+		} catch (...) {
+			_handle->_exception = std::current_exception();
+		}
+#endif
 	}
 
 	// Scheduler
@@ -138,6 +157,17 @@ namespace asmith {
 		// Create handle
 		std::shared_ptr<TaskHandle> handle(new TaskHandle(task, *this, priority));
 		task._handle = handle;
+
+#if ASMITH_TASK_CALLBACKS
+		// Task callback
+		try {
+			task.OnScheduled();
+		} catch (...) {
+			task._handle->_exception = std::current_exception();
+			task._state = Task::STATE_COMPLETE;
+			return handle;
+		}
+#endif
 
 		// Add to task queue
 		{

@@ -53,6 +53,12 @@ namespace asmith {
 	protected:
 		void Yield(const std::function<bool()>& condition);
 		virtual void Execute() = 0;
+
+#if ASMITH_TASK_CALLBACKS
+		virtual void OnScheduled() = 0;
+		virtual void OnBlock() = 0;
+		virtual void OnResume() = 0;
+#endif
 	public:
 		friend Scheduler;
 		friend TaskHandle;
