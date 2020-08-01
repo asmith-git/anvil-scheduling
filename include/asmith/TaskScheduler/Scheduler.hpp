@@ -67,7 +67,7 @@ namespace asmith {
 		std::mutex _mutex;
 		std::condition_variable _task_queue_update;
 
-		bool ExecuteNextTask() throw();
+		bool TryToExecuteTask() throw();
 	public:
 		friend Task;
 		typedef uint8_t Priority;
