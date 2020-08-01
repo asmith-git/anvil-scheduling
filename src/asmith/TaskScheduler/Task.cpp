@@ -20,44 +20,43 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#ifndef ASMITH_SCHEDULER_SCHEDULER_HPP
-#define ASMITH_SCHEDULER_SCHEDULER_HPP
-
-#include <functional>
-#include <memory>
 #include "asmith/TaskScheduler/Core.hpp"
+#include "asmith/TaskScheduler/Scheduler.hpp"
+#include "asmith/TaskScheduler/Task.hpp"
 
 namespace asmith {
+	// TaskHandle
 
-	class TaskHandle {
-	public:
-		typedef uint8_t Priority;
-	private:
-		friend Task;
-		Task& _task;
-		Scheduler& _scheduler;
-		Priority _priority;
+	TaskHandle::TaskHandle(Task& task, Scheduler& scheduler, Priority priority) :
+		_task(task),
+		_scheduler(scheduler),
+		_priority(priority)
+	{}
 
-		TaskHandle(Task& task, Scheduler& scheduler, Priority priority);
+	TaskHandle::~TaskHandle() {
+		_Wait();
+	}
 
-		void _Wait();
-	public:
-		~TaskHandle();
-		void Wait();
-	};
+	void TaskHandle::_Wait() {
+		if(_task._state == Task::STATE_INITIALISED || _task._state==Task::STATE_COMPLETE) return;
 
-	class Scheduler {
-	public:
-		friend Task;
-		typedef uint8_t Priority;
+		_scheduler.Yield([this]()->bool {
+			return _task._state == Task::STATE_COMPLETE;
+		});
+	}
 
-		Scheduler();
-		virtual ~Scheduler();
+	void TaskHandle::Wait() {
+		if (_task._state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
+		_Wait();
+	}
 
-		void Yield(const std::function<bool()>& condition);
+	// Task
 
-		std::shared_ptr<TaskHandle> Schedule(Task& task, Priority priority);
-	};
+	Task::Task() :
+		_state(STATE_INITIALISED)
+	{}
+
+	Task::~Task() {
+
+	}
 }
-
-#endif

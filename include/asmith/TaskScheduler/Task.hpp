@@ -56,6 +56,7 @@ namespace asmith {
 		}
 	public:
 		friend Scheduler;
+		friend TaskHandle;
 
 		Task();
 		virtual ~Task();
@@ -72,8 +73,8 @@ namespace asmith {
 
 		inline Scheduler& GetScheduler() const {
 			TaskHandle* const handle = _handle.get();
-			if (handle == nullptr || handle->_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-			return *handle->_scheduler;
+			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
+			return handle->_scheduler;
 		}
 	};
 }
