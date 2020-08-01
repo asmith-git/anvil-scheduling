@@ -81,7 +81,7 @@ namespace asmith {
 
 	}
 
-	void Task::Yield(const std::function<bool()>& condition) {
+	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
 		detail::UniqueTaskHandle* const handle = _handle.get();
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
 
@@ -99,7 +99,7 @@ namespace asmith {
 #endif
 
 		try {
-			handle->_scheduler.Yield(condition);
+			handle->_scheduler.Yield(condition, max_sleep_milliseconds);
 		} catch (...) {
 			_state = STATE_EXECUTING;
 			std::rethrow_exception(std::current_exception());
@@ -150,14 +150,20 @@ namespace asmith {
 		return true;
 	}
 
-	void Scheduler::Yield(const std::function<bool()>& condition) {
+	void Scheduler::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
+		max_sleep_milliseconds = std::max(1u, max_sleep_milliseconds);
+
 		// While the condition is not met
 		while (!condition()) {
 			// Try to execute a scheduled task
 			if (! TryToExecuteTask()) {
 				// If no task was scheduled then block until an update
 				std::unique_lock<std::mutex> lock(_mutex);
-				_task_queue_update.wait(lock);
+				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
+					_task_queue_update.wait(lock);
+				}else {
+					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
+				}
 			}
 		}
 	}

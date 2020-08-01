@@ -51,7 +51,7 @@ namespace asmith {
 		std::shared_ptr<detail::UniqueTaskHandle> _handle;
 		State _state;
 	protected:
-		void Yield(const std::function<bool()>& condition);
+		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 		virtual void Execute() = 0;
 
 #if ASMITH_TASK_CALLBACKS

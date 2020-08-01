@@ -75,7 +75,7 @@ namespace asmith {
 		Scheduler();
 		virtual ~Scheduler();
 
-		void Yield(const std::function<bool()>& condition);
+		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 
 		std::shared_ptr<TaskHandle> Schedule(Task& task, Priority priority);
 	};
