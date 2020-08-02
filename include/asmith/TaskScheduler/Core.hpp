@@ -27,6 +27,7 @@
 
 namespace asmith {
 	class Task;
+	class MultiTask;
 	class Scheduler;
 }
 

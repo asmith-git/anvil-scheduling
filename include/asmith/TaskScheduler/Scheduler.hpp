@@ -56,10 +56,9 @@ namespace asmith {
 			Scheduler& _scheduler;
 			Priority _priority;
 
-			UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority);
-
 			void _Wait();
 		public:
+			UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority);
 			virtual ~UniqueTaskHandle();
 			void Wait() final;
 		};
@@ -89,6 +88,7 @@ namespace asmith {
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 
 		std::shared_ptr<TaskHandle> Schedule(Task& task, Priority priority);
+		std::shared_ptr<TaskHandle> Schedule(MultiTask& task, Priority priority, const uint32_t count);
 	};
 }
 

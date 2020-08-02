@@ -24,6 +24,7 @@
 #include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
+#include "asmith/TaskScheduler/MultiTask.hpp"
 
 namespace asmith {
 
@@ -57,10 +58,14 @@ namespace asmith {
 			_scheduler.Yield([this]()->bool {
 				return _task._state == Task::STATE_COMPLETE;
 			});
+
+			_task._handle = nullptr;
 		}
 
 		void UniqueTaskHandle::Wait() {
 			if (_task._state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
+
+			_Wait();
 
 			// Rethrow a caught exception
 			if (_exception) {
@@ -68,7 +73,6 @@ namespace asmith {
 				_exception = std::exception_ptr();
 				std::rethrow_exception(tmp);
 			}
-			_Wait();
 		}
 	}
 
@@ -83,7 +87,7 @@ namespace asmith {
 	}
 
 	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
-		detail::UniqueTaskHandle* const handle = _handle.get();
+		detail::UniqueTaskHandle* const handle = _handle;
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
 
 		if (condition()) return;
@@ -178,7 +182,7 @@ namespace asmith {
 
 		// Create handle
 		std::shared_ptr<detail::UniqueTaskHandle> handle(new detail::UniqueTaskHandle(task, *this, priority));
-		task._handle = handle;
+		task._handle = handle.get();
 
 #if ASMITH_TASK_CALLBACKS
 		// Task callback
@@ -207,6 +211,132 @@ namespace asmith {
 
 
 		return handle;
+	}
+
+	std::shared_ptr<TaskHandle> Scheduler::Schedule(MultiTask& task, Priority priority, const uint32_t count) {
+		task._count = count;
+
+		// Create handle
+		std::shared_ptr<MultiTask::Handle> handle(new MultiTask::Handle(task, count, *this, priority));
+
+		// Add to task queue
+		{
+			std::lock_guard<std::mutex> lock(_mutex);
+			for (uint32_t i = 0u; i < task._count; ++i) {
+				MultiTask::SubTask& subtask = handle->_subtasks[i];
+				subtask._state = Task::STATE_SCHEDULED;
+				subtask._handle = handle->_handles + i;
+				_task_queue.push_back(&subtask);
+			}
+
+			// Sort task list by priority
+			std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
+				return lhs->_handle->_priority < rhs->_handle->_priority;
+			});
+		}
+
+		// Notify waiting threads
+		_task_queue_update.notify_all();
+
+
+		return handle;
+	}
+
+	// MultiTask
+
+	MultiTask::MultiTask() {
+
+	}
+
+	MultiTask::~MultiTask() {
+
+	}
+
+	// MultiTask::SubTask
+
+	MultiTask::SubTask::SubTask(MultiTask& parent, const uint32_t index) :
+		_parent(parent),
+		_index(index)
+	{}
+
+	MultiTask::SubTask::~SubTask() {
+
+	}
+
+	void MultiTask::SubTask::Execute() {
+		_parent.Execute(_index);
+	}
+
+#if ASMITH_TASK_CALLBACKS
+	void MultiTask::SubTask::OnScheduled() {
+		_parent.OnScheduled(_index);
+	}
+
+	void MultiTask::SubTask::OnBlock() {
+		_parent.OnBlock(_index);
+	}
+
+	void MultiTask::SubTask::OnResume() {
+		_parent.OnResume(_index);
+	}
+#endif
+
+	// MultiTask::Handle
+
+	MultiTask::Handle::Handle(MultiTask& parent, const uint32_t count, Scheduler& scheduler, Task::Priority priority) :
+		_subtasks(nullptr),
+		_handles(nullptr),
+		_count(count)
+	{
+		// Use only one memory allocation for all tasks and handles to save on some overheads
+		_subtasks = static_cast<MultiTask::SubTask*>(operator new((sizeof(MultiTask::SubTask) + sizeof(detail::UniqueTaskHandle)) * count));
+		_handles = reinterpret_cast<detail::UniqueTaskHandle*>(_subtasks + count);
+
+		for (uint32_t i = 0u; i < count; ++i) {
+			new(_subtasks + i) MultiTask::SubTask(parent, i);
+			new(_handles + i) detail::UniqueTaskHandle(_subtasks[i], scheduler, priority);
+		}
+	}
+
+	MultiTask::Handle::~Handle() {
+		_Wait();
+	}
+
+	void MultiTask::Handle::Wait() {
+		_Wait();
+	}
+
+	void MultiTask::Handle::_Wait() {
+		if (_handles != nullptr) {
+			std::exception_ptr exception = nullptr;
+
+			// Wait for all subtasks
+			for (uint32_t i = 0u; i < _count; ++i) {
+				try {
+					_handles[i].Wait();
+				} catch (...) {
+					exception = std::current_exception();
+				}
+			}
+
+			// Free memory used for subtasks
+			for (uint32_t i = 0u; i < _count; ++i) {
+				try {
+					_subtasks[i].~SubTask();
+				} catch (...) {
+					exception = std::current_exception();
+				}
+				try {
+					_handles[i].~UniqueTaskHandle();
+				} catch (...) {
+					exception = std::current_exception();
+				}
+			}
+			operator delete(_subtasks);
+			_subtasks = nullptr;
+
+			if (exception) std::rethrow_exception(exception);
+		}
 	}
 
 }

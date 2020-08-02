@@ -53,7 +53,7 @@ namespace asmith {
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete;
 
-		std::shared_ptr<detail::UniqueTaskHandle> _handle;
+		detail::UniqueTaskHandle* _handle;
 		State _state;
 	protected:
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
@@ -76,13 +76,13 @@ namespace asmith {
 		}
 
 		inline Priority GetPriority() const throw() {
-			detail::UniqueTaskHandle* const handle = _handle.get();
+			detail::UniqueTaskHandle* const handle = _handle;
 			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
 			return handle->_priority;
 		}
 
 		inline Scheduler& GetScheduler() const {
-			detail::UniqueTaskHandle* const handle = _handle.get();
+			detail::UniqueTaskHandle* const handle = _handle;
 			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
 			return handle->_scheduler;
 		}
