@@ -33,6 +33,11 @@
 namespace asmith {
 
 	class TaskHandle {
+	private:
+		TaskHandle(TaskHandle&&) = delete;
+		TaskHandle(const TaskHandle&) = delete;
+		TaskHandle& operator=(TaskHandle&&) = delete;
+		TaskHandle& operator=(const TaskHandle&) = delete;
 	public:
 		TaskHandle();
 		virtual ~TaskHandle();
@@ -62,6 +67,12 @@ namespace asmith {
 
 	class Scheduler {
 	private:
+	private:
+		Scheduler(Scheduler&&) = delete;
+		Scheduler(const Scheduler&) = delete;
+		Scheduler& operator=(Scheduler&&) = delete;
+		Scheduler& operator=(const Scheduler&) = delete;
+
 		std::vector<Task*> _task_queue;
 	protected:
 		std::mutex _mutex;

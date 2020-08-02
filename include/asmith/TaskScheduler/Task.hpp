@@ -48,6 +48,11 @@ namespace asmith {
 			PRIORITY_LOW = PRIORITY_MIDDLE - (PRIORITY_MIDDLE / 2u)
 		};
 	private:
+		Task(Task&&) = delete;
+		Task(const Task&) = delete;
+		Task& operator=(Task&&) = delete;
+		Task& operator=(const Task&) = delete;
+
 		std::shared_ptr<detail::UniqueTaskHandle> _handle;
 		State _state;
 	protected:

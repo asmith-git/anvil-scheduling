@@ -41,6 +41,7 @@ namespace asmith {
 		// UniqueTaskHandle
 
 		UniqueTaskHandle::UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority) :
+			_exception(nullptr),
 			_task(task),
 			_scheduler(scheduler),
 			_priority(priority)
@@ -173,7 +174,7 @@ namespace asmith {
 		if (task._state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
 
 		// State change
-		task._state = Task::STATE_INITIALISED;
+		task._state = Task::STATE_SCHEDULED;
 
 		// Create handle
 		std::shared_ptr<detail::UniqueTaskHandle> handle(new detail::UniqueTaskHandle(task, *this, priority));
