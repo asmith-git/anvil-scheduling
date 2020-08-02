@@ -334,6 +334,7 @@ namespace asmith {
 			}
 			operator delete(_subtasks);
 			_subtasks = nullptr;
+			_handles = nullptr;
 
 			if (exception) std::rethrow_exception(exception);
 		}
