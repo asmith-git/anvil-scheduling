@@ -55,7 +55,17 @@ namespace asmith {
 
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 
-		void Schedule(Task& task, Priority priority);
+		void Schedule(Task** tasks, const uint32_t count);
+
+		inline void Schedule(Task& task) {
+			Task* t = &task;
+			Schedule(&t, 1u);
+		}
+
+		inline void Schedule(Task& task, Priority priority) {
+			task.SetPriority(priority);
+			Schedule(task);
+		}
 	};
 }
 

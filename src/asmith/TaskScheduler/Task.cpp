@@ -89,6 +89,12 @@ namespace asmith {
 		}
 	}
 
+
+	void Task::SetPriority(const Priority priority) {
+		if (_state != Task::STATE_INITIALISED) throw std::runtime_error("Task must be in STATE_INITIALISED to set priority");
+		_priority = priority;
+	}
+
 	// Scheduler
 
 	Scheduler::Scheduler() {
@@ -142,28 +148,39 @@ namespace asmith {
 		}
 	}
 
-	void Scheduler::Schedule(Task& task, Priority priority) {
+	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
 		// Initial error checking
-		if (task._state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
+		for (uint32_t i = 0u; i < count; ++i) {
+			if (tasks[i]->_state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
+		}
 
 		// State change
-		task._state = Task::STATE_SCHEDULED;
+		for (uint32_t i = 0u; i < count; ++i) {
+			tasks[i]->_state = Task::STATE_SCHEDULED;
+		}
 
 #if ASMITH_TASK_CALLBACKS
 		// Task callback
-		try {
-			task.OnScheduled();
-		} catch (...) {
-			task._exception = std::current_exception();
-			task._state = Task::STATE_COMPLETE;
-			return;
+		for (uint32_t i = 0u; i < count; ++i) {
+			Task& t = *tasks[i];
+			try {
+				t.OnScheduled();
+			} catch (...) {
+				t._exception = std::current_exception();
+				t._state = Task::STATE_COMPLETE;
+			}
 		}
 #endif
 
 		// Add to task queue
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
-			_task_queue.push_back(&task);
+			for (uint32_t i = 0u; i < count; ++i) {
+#if ASMITH_TASK_CALLBACKS
+				if(tasks[i]->_state == Task::STATE_SCHEDULED)
+#endif
+				_task_queue.push_back(tasks[i]);
+			}
 
 			// Sort task list by priority
 			std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {

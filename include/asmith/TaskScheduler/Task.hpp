@@ -73,6 +73,7 @@ namespace asmith {
 		virtual ~Task();
 
 		void Wait();
+		void SetPriority(const Priority priority);
 
 		inline bool IsWaitable() const throw() {
 			return _state != STATE_INITIALISED;
