@@ -45,17 +45,15 @@ namespace asmith {
 
 		if (condition()) return;
 
-		_state = STATE_BLOCKED;
-
 #if ASMITH_TASK_CALLBACKS
 		try {
 			OnBlock();
 		} catch (...) {
-			_state = STATE_EXECUTING;
-			_exception = std::current_exception();
+			std::rethrow_exception(std::current_exception());
 		}
 #endif
 
+		_state = STATE_BLOCKED;
 		try {
 			_scheduler->Yield(condition, max_sleep_milliseconds);
 		} catch (...) {
@@ -65,11 +63,7 @@ namespace asmith {
 		_state = STATE_EXECUTING;
 
 #if ASMITH_TASK_CALLBACKS
-		try {
-			OnResume();
-		} catch (...) {
-			_exception = std::current_exception();
-		}
+		OnResume();
 #endif
 	}
 
@@ -154,23 +148,22 @@ namespace asmith {
 			if (tasks[i]->_state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
 		}
 
-		// State change
 		for (uint32_t i = 0u; i < count; ++i) {
-			tasks[i]->_state = Task::STATE_SCHEDULED;
-		}
+			// State change
+			Task& t = *tasks[i];
+			t._state = Task::STATE_SCHEDULED;
+			t._exception = std::exception_ptr();
 
 #if ASMITH_TASK_CALLBACKS
-		// Task callback
-		for (uint32_t i = 0u; i < count; ++i) {
-			Task& t = *tasks[i];
+			// Task callback
 			try {
 				t.OnScheduled();
 			} catch (...) {
 				t._exception = std::current_exception();
 				t._state = Task::STATE_COMPLETE;
 			}
-		}
 #endif
+		}
 
 		// Add to task queue
 		{
