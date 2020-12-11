@@ -28,57 +28,7 @@
 
 namespace asmith {
 
-	class MultiTask {
-	private:
-		class SubTask final : public Task {
-		private:
-			MultiTask& _parent;
-			const uint32_t _index;
-		protected:
-			void Execute() final;
-#if ASMITH_TASK_CALLBACKS
-			void OnScheduled() final;
-			void OnBlock() final;
-			void OnResume() final;
-#endif
-		public:
-			SubTask(MultiTask& parent, const uint32_t index);
-			virtual ~SubTask();
-		};
 
-		class Handle final : public TaskHandle {
-		private:
-			MultiTask::SubTask* _subtasks;
-			detail::UniqueTaskHandle* _handles;
-			const uint32_t _count;
-
-			void _Wait();
-		public:
-			friend Scheduler;
-
-			Handle(MultiTask& parent, const uint32_t count, Scheduler& scheduler, Task::Priority priority);
-			~Handle();
-			void Wait() final;
-		};
-
-		uint32_t _count;
-	protected:
-		virtual void Execute(const uint32_t index) = 0;
-
-#if ASMITH_TASK_CALLBACKS
-		virtual void OnScheduled(const uint32_t index) = 0;
-		virtual void OnBlock(const uint32_t index) = 0;
-		virtual void OnResume(const uint32_t index) = 0;
-#endif
-		inline uint32_t GetSubtaskCount() const throw() {
-			return _count;
-		}
-	public:
-		friend Scheduler;
-
-		MultiTask();
-		virtual ~MultiTask();
-	};
 }
 
 #endif

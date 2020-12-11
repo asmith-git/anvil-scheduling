@@ -53,7 +53,9 @@ namespace asmith {
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete;
 
-		detail::UniqueTaskHandle* _handle;
+		std::exception_ptr _exception;
+		Scheduler* _scheduler;
+		Priority _priority;
 		State _state;
 	protected:
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
@@ -66,27 +68,32 @@ namespace asmith {
 #endif
 	public:
 		friend Scheduler;
-		friend detail::UniqueTaskHandle;
 
 		Task();
 		virtual ~Task();
+
+		void Wait();
+
+		inline bool IsWaitable() const throw() {
+			return _state != STATE_INITIALISED;
+		}
 
 		inline State GetState() const throw() {
 			return _state;
 		}
 
 		inline Priority GetPriority() const throw() {
-			detail::UniqueTaskHandle* const handle = _handle;
-			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-			return handle->_priority;
+			//if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
+			return _priority;
 		}
 
 		inline Scheduler& GetScheduler() const {
-			detail::UniqueTaskHandle* const handle = _handle;
-			if (handle == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-			return handle->_scheduler;
+			if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
+			return *_scheduler;
 		}
+
 	};
+
 }
 
 #endif
