@@ -37,7 +37,7 @@ namespace asmith {
 	{}
 
 	Task::~Task() {
-
+		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
 	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
@@ -68,10 +68,10 @@ namespace asmith {
 	}
 
 	void Task::Wait() {
-		if (_state == Task::STATE_COMPLETE) return;
-		if (_state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
+		Scheduler* scheduler = _scheduler;
+		if (scheduler == nullptr || _state == Task::STATE_COMPLETE) return;
 
-		_scheduler->Yield([this]()->bool {
+		scheduler->Yield([this]()->bool {
 			return _state == Task::STATE_COMPLETE;
 		});
 
@@ -85,8 +85,18 @@ namespace asmith {
 
 
 	void Task::SetPriority(const Priority priority) {
-		if (_state != Task::STATE_INITIALISED) throw std::runtime_error("Task must be in STATE_INITIALISED to set priority");
-		_priority = priority;
+		Scheduler* scheduler = _scheduler;
+		if (scheduler) {
+			std::lock_guard<std::mutex> lock(scheduler->_mutex);
+			if (_state == STATE_SCHEDULED) {
+				_priority = priority;
+				scheduler->SortTaskQueue();
+			} else {
+				throw std::runtime_error("Priority of a task cannot be changed when executing");
+			}
+		} else {
+			_priority = priority;
+		}
 	}
 
 	// Scheduler
@@ -142,6 +152,12 @@ namespace asmith {
 		}
 	}
 
+	void Scheduler::SortTaskQueue() throw() {
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
+			return lhs->_priority < rhs->_priority;
+		});
+	}
+
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
 		// Initial error checking
 		for (uint32_t i = 0u; i < count; ++i) {
@@ -176,13 +192,15 @@ namespace asmith {
 			}
 
 			// Sort task list by priority
-			std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
-				return lhs->_priority < rhs->_priority;
-			});
+			SortTaskQueue();
 		}
 
 		// Notify waiting threads
 		_task_queue_update.notify_all();
 	}
-
+	
+	void Scheduler::Schedule(Task& task, Priority priority) {
+		task.SetPriority(priority);
+		Schedule(task);
+	}
 }

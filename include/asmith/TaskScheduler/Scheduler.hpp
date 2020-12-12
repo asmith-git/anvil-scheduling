@@ -41,6 +41,7 @@ namespace asmith {
 		Scheduler& operator=(const Scheduler&) = delete;
 
 		std::vector<Task*> _task_queue;
+		void SortTaskQueue() throw();
 	protected:
 		std::mutex _mutex;
 		std::condition_variable _task_queue_update;
@@ -62,10 +63,7 @@ namespace asmith {
 			Schedule(&t, 1u);
 		}
 
-		inline void Schedule(Task& task, Priority priority) {
-			task.SetPriority(priority);
-			Schedule(task);
-		}
+		void Schedule(Task& task, Priority priority);
 	};
 }
 
