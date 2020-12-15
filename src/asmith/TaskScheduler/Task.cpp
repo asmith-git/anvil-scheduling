@@ -28,83 +28,34 @@
 
 namespace asmith {
 
-	// TaskHandle
-
-	TaskHandle::TaskHandle() {
-
-	}
-
-	TaskHandle::~TaskHandle() {
-
-	}
-
-	namespace detail {
-		// UniqueTaskHandle
-
-		UniqueTaskHandle::UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority) :
-			_exception(nullptr),
-			_task(task),
-			_scheduler(scheduler),
-			_priority(priority)
-		{}
-
-		UniqueTaskHandle::~UniqueTaskHandle() {
-			_Wait();
-		}
-
-		void UniqueTaskHandle::_Wait() {
-			if (_task._state == Task::STATE_INITIALISED || _task._state == Task::STATE_COMPLETE) return;
-
-			_scheduler.Yield([this]()->bool {
-				return _task._state == Task::STATE_COMPLETE;
-			});
-
-			_task._handle = nullptr;
-		}
-
-		void UniqueTaskHandle::Wait() {
-			if (_task._state == Task::STATE_INITIALISED) throw std::runtime_error("Task has not been scheduled");
-
-			_Wait();
-
-			// Rethrow a caught exception
-			if (_exception) {
-				std::exception_ptr tmp = _exception;
-				_exception = std::exception_ptr();
-				std::rethrow_exception(tmp);
-			}
-		}
-	}
-
 	// Task
 
 	Task::Task() :
+		_scheduler(nullptr),
+		_priority(PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{}
 
 	Task::~Task() {
-
+		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
 	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
-		detail::UniqueTaskHandle* const handle = _handle;
 		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
 
 		if (condition()) return;
-
-		_state = STATE_BLOCKED;
 
 #if ASMITH_TASK_CALLBACKS
 		try {
 			OnBlock();
 		} catch (...) {
-			_state = STATE_EXECUTING;
-			_handle->_exception = std::current_exception();
+			std::rethrow_exception(std::current_exception());
 		}
 #endif
 
+		_state = STATE_BLOCKED;
 		try {
-			handle->_scheduler.Yield(condition, max_sleep_milliseconds);
+			_scheduler->Yield(condition, max_sleep_milliseconds);
 		} catch (...) {
 			_state = STATE_EXECUTING;
 			std::rethrow_exception(std::current_exception());
@@ -112,12 +63,40 @@ namespace asmith {
 		_state = STATE_EXECUTING;
 
 #if ASMITH_TASK_CALLBACKS
-		try {
-			OnResume();
-		} catch (...) {
-			_handle->_exception = std::current_exception();
-		}
+		OnResume();
 #endif
+	}
+
+	void Task::Wait() {
+		Scheduler* scheduler = _scheduler;
+		if (scheduler == nullptr || _state == Task::STATE_COMPLETE) return;
+
+		scheduler->Yield([this]()->bool {
+			return _state == Task::STATE_COMPLETE;
+		});
+
+		// Rethrow a caught exception
+		if (_exception) {
+			std::exception_ptr tmp = _exception;
+			_exception = std::exception_ptr();
+			std::rethrow_exception(tmp);
+		}
+	}
+
+
+	void Task::SetPriority(const Priority priority) {
+		Scheduler* scheduler = _scheduler;
+		if (scheduler) {
+			std::lock_guard<std::mutex> lock(scheduler->_mutex);
+			if (_state == STATE_SCHEDULED) {
+				_priority = priority;
+				scheduler->SortTaskQueue();
+			} else {
+				throw std::runtime_error("Priority of a task cannot be changed when executing");
+			}
+		} else {
+			_priority = priority;
+		}
 	}
 
 	// Scheduler
@@ -140,14 +119,14 @@ namespace asmith {
 			_task_queue.pop_back();
 		}
 
+		task->_state = Task::STATE_EXECUTING;
 		try {
-			task->_state = Task::STATE_EXECUTING;
 			task->Execute();
-			task->_state = Task::STATE_COMPLETE;
 		} catch (...) {
-			task->_handle->_exception = std::current_exception();
-			task->_state = Task::STATE_COMPLETE;
+			task->_exception = std::current_exception();
 		}
+		task->_state = Task::STATE_COMPLETE;
+		task->_scheduler = nullptr;
 
 		// Wake waiting threads
 		_task_queue_update.notify_all();
@@ -173,171 +152,55 @@ namespace asmith {
 		}
 	}
 
-	std::shared_ptr<TaskHandle> Scheduler::Schedule(Task& task, Priority priority) {
+	void Scheduler::SortTaskQueue() throw() {
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
+			return lhs->_priority < rhs->_priority;
+		});
+	}
+
+	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
 		// Initial error checking
-		if (task._state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
-
-		// State change
-		task._state = Task::STATE_SCHEDULED;
-
-		// Create handle
-		std::shared_ptr<detail::UniqueTaskHandle> handle(new detail::UniqueTaskHandle(task, *this, priority));
-		task._handle = handle.get();
-
-#if ASMITH_TASK_CALLBACKS
-		// Task callback
-		try {
-			task.OnScheduled();
-		} catch (...) {
-			task._handle->_exception = std::current_exception();
-			task._state = Task::STATE_COMPLETE;
-			return handle;
+		for (uint32_t i = 0u; i < count; ++i) {
+			if (tasks[i]->_state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
 		}
-#endif
-
-		// Add to task queue
-		{
-			std::lock_guard<std::mutex> lock(_mutex);
-			_task_queue.push_back(&task);
-
-			// Sort task list by priority
-			std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
-				return lhs->_handle->_priority < rhs->_handle->_priority;
-			});
-		}
-
-		// Notify waiting threads
-		_task_queue_update.notify_all();
-
-
-		return handle;
-	}
-
-	std::shared_ptr<TaskHandle> Scheduler::Schedule(MultiTask& task, Priority priority, const uint32_t count) {
-		task._count = count;
-
-		// Create handle
-		std::shared_ptr<MultiTask::Handle> handle(new MultiTask::Handle(task, count, *this, priority));
-
-		// Add to task queue
-		{
-			std::lock_guard<std::mutex> lock(_mutex);
-			for (uint32_t i = 0u; i < task._count; ++i) {
-				MultiTask::SubTask& subtask = handle->_subtasks[i];
-				subtask._state = Task::STATE_SCHEDULED;
-				subtask._handle = handle->_handles + i;
-				_task_queue.push_back(&subtask);
-			}
-
-			// Sort task list by priority
-			std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
-				return lhs->_handle->_priority < rhs->_handle->_priority;
-			});
-		}
-
-		// Notify waiting threads
-		_task_queue_update.notify_all();
-
-
-		return handle;
-	}
-
-	// MultiTask
-
-	MultiTask::MultiTask() {
-
-	}
-
-	MultiTask::~MultiTask() {
-
-	}
-
-	// MultiTask::SubTask
-
-	MultiTask::SubTask::SubTask(MultiTask& parent, const uint32_t index) :
-		_parent(parent),
-		_index(index)
-	{}
-
-	MultiTask::SubTask::~SubTask() {
-
-	}
-
-	void MultiTask::SubTask::Execute() {
-		_parent.Execute(_index);
-	}
-
-#if ASMITH_TASK_CALLBACKS
-	void MultiTask::SubTask::OnScheduled() {
-		_parent.OnScheduled(_index);
-	}
-
-	void MultiTask::SubTask::OnBlock() {
-		_parent.OnBlock(_index);
-	}
-
-	void MultiTask::SubTask::OnResume() {
-		_parent.OnResume(_index);
-	}
-#endif
-
-	// MultiTask::Handle
-
-	MultiTask::Handle::Handle(MultiTask& parent, const uint32_t count, Scheduler& scheduler, Task::Priority priority) :
-		_subtasks(nullptr),
-		_handles(nullptr),
-		_count(count)
-	{
-		// Use only one memory allocation for all tasks and handles to save on some overheads
-		_subtasks = static_cast<MultiTask::SubTask*>(operator new((sizeof(MultiTask::SubTask) + sizeof(detail::UniqueTaskHandle)) * count));
-		_handles = reinterpret_cast<detail::UniqueTaskHandle*>(_subtasks + count);
 
 		for (uint32_t i = 0u; i < count; ++i) {
-			new(_subtasks + i) MultiTask::SubTask(parent, i);
-			new(_handles + i) detail::UniqueTaskHandle(_subtasks[i], scheduler, priority);
+			// State change
+			Task& t = *tasks[i];
+			t._state = Task::STATE_SCHEDULED;
+			t._exception = std::exception_ptr();
+
+#if ASMITH_TASK_CALLBACKS
+			// Task callback
+			try {
+				t.OnScheduled();
+			} catch (...) {
+				t._exception = std::current_exception();
+				t._state = Task::STATE_COMPLETE;
+			}
+#endif
 		}
-	}
 
-	MultiTask::Handle::~Handle() {
-		_Wait();
-	}
-
-	void MultiTask::Handle::Wait() {
-		_Wait();
-	}
-
-	void MultiTask::Handle::_Wait() {
-		if (_handles != nullptr) {
-			std::exception_ptr exception = nullptr;
-
-			// Wait for all subtasks
-			for (uint32_t i = 0u; i < _count; ++i) {
-				try {
-					_handles[i].Wait();
-				} catch (...) {
-					exception = std::current_exception();
-				}
+		// Add to task queue
+		{
+			std::lock_guard<std::mutex> lock(_mutex);
+			for (uint32_t i = 0u; i < count; ++i) {
+#if ASMITH_TASK_CALLBACKS
+				if(tasks[i]->_state == Task::STATE_SCHEDULED)
+#endif
+				_task_queue.push_back(tasks[i]);
 			}
 
-			// Free memory used for subtasks
-			for (uint32_t i = 0u; i < _count; ++i) {
-				try {
-					_subtasks[i].~SubTask();
-				} catch (...) {
-					exception = std::current_exception();
-				}
-				try {
-					_handles[i].~UniqueTaskHandle();
-				} catch (...) {
-					exception = std::current_exception();
-				}
-			}
-			operator delete(_subtasks);
-			_subtasks = nullptr;
-			_handles = nullptr;
-
-			if (exception) std::rethrow_exception(exception);
+			// Sort task list by priority
+			SortTaskQueue();
 		}
-	}
 
+		// Notify waiting threads
+		_task_queue_update.notify_all();
+	}
+	
+	void Scheduler::Schedule(Task& task, Priority priority) {
+		task.SetPriority(priority);
+		Schedule(task);
+	}
 }

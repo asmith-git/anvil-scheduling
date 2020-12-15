@@ -32,38 +32,6 @@
 
 namespace asmith {
 
-	class TaskHandle {
-	private:
-		TaskHandle(TaskHandle&&) = delete;
-		TaskHandle(const TaskHandle&) = delete;
-		TaskHandle& operator=(TaskHandle&&) = delete;
-		TaskHandle& operator=(const TaskHandle&) = delete;
-	public:
-		TaskHandle();
-		virtual ~TaskHandle();
-		virtual void Wait() = 0;
-	};
-
-	namespace detail {
-		class UniqueTaskHandle final : public TaskHandle {
-		public:
-			typedef uint8_t Priority;
-		private:
-			friend Task;
-			friend Scheduler;
-			std::exception_ptr _exception;
-			Task& _task;
-			Scheduler& _scheduler;
-			Priority _priority;
-
-			void _Wait();
-		public:
-			UniqueTaskHandle(Task& task, Scheduler& scheduler, Priority priority);
-			virtual ~UniqueTaskHandle();
-			void Wait() final;
-		};
-	}
-
 	class Scheduler {
 	private:
 	private:
@@ -73,6 +41,7 @@ namespace asmith {
 		Scheduler& operator=(const Scheduler&) = delete;
 
 		std::vector<Task*> _task_queue;
+		void SortTaskQueue() throw();
 	protected:
 		std::mutex _mutex;
 		std::condition_variable _task_queue_update;
@@ -87,8 +56,14 @@ namespace asmith {
 
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 
-		std::shared_ptr<TaskHandle> Schedule(Task& task, Priority priority);
-		std::shared_ptr<TaskHandle> Schedule(MultiTask& task, Priority priority, const uint32_t count);
+		void Schedule(Task** tasks, const uint32_t count);
+
+		inline void Schedule(Task& task) {
+			Task* t = &task;
+			Schedule(&t, 1u);
+		}
+
+		void Schedule(Task& task, Priority priority);
 	};
 }
 
