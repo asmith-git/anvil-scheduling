@@ -89,6 +89,9 @@ namespace asmith {
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
+#if ASMITH_TASK_EXTENDED_PRIORITY
+				_extended_priority = GetExtendedPriority();
+#endif
 				_priority = priority;
 				scheduler->SortTaskQueue();
 			} else {
@@ -98,6 +101,12 @@ namespace asmith {
 			_priority = priority;
 		}
 	}
+
+#if ASMITH_TASK_EXTENDED_PRIORITY
+	float Task::GetExtendedPriority() const {
+		return 0.f;
+	}
+#endif 
 
 	// Scheduler
 
@@ -154,7 +163,12 @@ namespace asmith {
 
 	void Scheduler::SortTaskQueue() throw() {
 		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
+#if ASMITH_TASK_EXTENDED_PRIORITY
+			return lhs->_priority < rhs->_priority ? true : lhs->_extended_priority < rhs->_extended_priority;
+
+#else
 			return lhs->_priority < rhs->_priority;
+#endif
 		});
 	}
 

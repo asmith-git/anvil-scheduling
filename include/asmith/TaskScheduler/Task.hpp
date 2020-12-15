@@ -23,6 +23,9 @@
 #ifndef ASMITH_SCHEDULER_TASK_HPP
 #define ASMITH_SCHEDULER_TASK_HPP
 
+// ASMITH_TASK_CALLBACKS
+// ASMITH_TASK_EXTENDED_PRIORITY
+
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
@@ -55,12 +58,17 @@ namespace asmith {
 
 		std::exception_ptr _exception;
 		Scheduler* _scheduler;
+#if ASMITH_TASK_EXTENDED_PRIORITY
+		float _extended_priority;
+#endif
 		Priority _priority;
 		State _state;
 	protected:
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 		virtual void Execute() = 0;
-
+#if ASMITH_TASK_EXTENDED_PRIORITY
+		virtual float GetExtendedPriority() const;
+#endif
 #if ASMITH_TASK_CALLBACKS
 		virtual void OnScheduled() = 0;
 		virtual void OnBlock() = 0;
