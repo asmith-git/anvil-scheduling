@@ -46,11 +46,7 @@ namespace asmith {
 		if (condition()) return;
 
 #if ASMITH_TASK_CALLBACKS
-		try {
-			OnBlock();
-		} catch (...) {
-			std::rethrow_exception(std::current_exception());
-		}
+		OnBlock();
 #endif
 
 		_state = STATE_BLOCKED;
