@@ -28,10 +28,63 @@
 
 namespace asmith {
 
+#if ASMITH_TASK_MEMORY_OPTIMISED
+	static std::mutex g_scheduler_list_lock;
+	enum { MAX_SCHEDULERS = 255u };
+	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
+
+	namespace detail {
+		// I don't think this is required on most compilers, but ensure memory is zeroed on program start
+
+		static uint32_t InitialiseSchedulerList() throw() {
+			memset(g_scheduler_list, 0, sizeof(Scheduler*) * MAX_SCHEDULERS);
+			return 0;
+		}
+
+		static const uint32_t g_ensure_scheduler_list = InitialiseSchedulerList();
+	}
+
+	static uint32_t GetSchedulerIndex(const Scheduler& scheduler) {
+		//! \bug Undefined behaviour if a scheduler is deleted while this function is running
+
+		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
+			if (g_scheduler_list[i] == &scheduler) return i;
+		}
+
+		throw std::runtime_error("Could not find scheduler in global list");
+	}
+
+	static uint32_t AddScheduler(Scheduler& scheduler) {
+		std::lock_guard<std::mutex> lock(g_scheduler_list_lock);
+		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
+			if (g_scheduler_list[i] == nullptr) {
+				g_scheduler_list[i] = &scheduler;
+				return i;
+			}
+		}
+		throw std::runtime_error("Too many schedulers in global list");
+	}
+
+	static void RemoveScheduler(const Scheduler& scheduler) {
+		std::lock_guard<std::mutex> lock(g_scheduler_list_lock);
+		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
+			if (g_scheduler_list[i] == &scheduler) {
+				g_scheduler_list[i] = nullptr;
+				return;
+			}
+		}
+		throw std::runtime_error("Could not find scheduler in global list");
+	}
+#endif
+
 	// Task
 
 	Task::Task() :
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		_scheduler_index(0u),
+#else
 		_scheduler(nullptr),
+#endif
 		_priority(PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{}
@@ -51,7 +104,7 @@ namespace asmith {
 
 		_state = STATE_BLOCKED;
 		try {
-			_scheduler->Yield(condition, max_sleep_milliseconds);
+			_GetScheduler()->Yield(condition, max_sleep_milliseconds);
 		} catch (...) {
 			_state = STATE_EXECUTING;
 			std::rethrow_exception(std::current_exception());
@@ -64,24 +117,26 @@ namespace asmith {
 	}
 
 	void Task::Wait() {
-		Scheduler* scheduler = _scheduler;
+		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE) return;
 
 		scheduler->Yield([this]()->bool {
 			return _state == Task::STATE_COMPLETE;
 		});
 
+#if !ASMITH_TASK_MEMORY_OPTIMISED
 		// Rethrow a caught exception
 		if (_exception) {
 			std::exception_ptr tmp = _exception;
 			_exception = std::exception_ptr();
 			std::rethrow_exception(tmp);
 		}
+#endif
 	}
 
 
 	void Task::SetPriority(const Priority priority) {
-		Scheduler* scheduler = _scheduler;
+		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
@@ -104,14 +159,27 @@ namespace asmith {
 	}
 #endif 
 
+	Scheduler* Task::_GetScheduler() const throw() {
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		return g_scheduler_list[_scheduler_index];
+#else
+		return _scheduler;
+#endif
+	}
+
 	// Scheduler
 
 	Scheduler::Scheduler() {
-
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		AddScheduler(*this);
+#endif
 	}
 
 	Scheduler::~Scheduler() {
 		//! \bug Scheduled tasks are left in an undefined state
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		RemoveScheduler(*this);
+#endif
 	}
 
 	bool Scheduler::TryToExecuteTask() throw() {
@@ -128,10 +196,18 @@ namespace asmith {
 		try {
 			task->Execute();
 		} catch (...) {
+#if ASMITH_TASK_MEMORY_OPTIMISED
+			//! \bug Exceptions are not allowed in ASMITH_TASK_MEMORY_OPTIMISED so is ignored
+#else
 			task->_exception = std::current_exception();
+#endif
 		}
 		task->_state = Task::STATE_COMPLETE;
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		task->_scheduler_index = 0u;
+#else
 		task->_scheduler = nullptr;
+#endif
 
 		// Wake waiting threads
 		_task_queue_update.notify_all();
@@ -178,7 +254,12 @@ namespace asmith {
 			// State change
 			Task& t = *tasks[i];
 			t._state = Task::STATE_SCHEDULED;
+#if ASMITH_TASK_MEMORY_OPTIMISED
+			t._scheduler_index = GetSchedulerIndex(*this);
+#else
+			t._scheduler = this;
 			t._exception = std::exception_ptr();
+#endif
 
 #if ASMITH_TASK_CALLBACKS
 			// Task callback

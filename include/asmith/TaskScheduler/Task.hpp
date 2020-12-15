@@ -28,15 +28,21 @@
 
 namespace asmith {
 
+	// Check for invalid exension options
+#if ASMITH_TASK_MEMORY_OPTIMISED && ASMITH_TASK_EXTENDED_PRIORITY
+	#error ASMITH_TASK_EXTENDED_PRIORITY is incompatible with ASMITH_TASK_MEMORY_OPTIMISED
+#endif
+
 	/*!
 		\class Task
-		\author    Adam G. Smith
+		\author Adam G. Smith
 		\date December 2020
 		\copyright MIT License
 		\brief Base structure for implementing Task based parallel programming.
-		\details There are currently two optional compiler constants that can be defined (> 0) to enable extension features:
+		\details There are currently three optional compiler constants that can be defined (> 0) to enable extension features:
 		- ASMITH_TASK_CALLBACKS : Adds user callbacks when Task is scheduled, suspended or resumed.
 		- ASMITH_TASK_EXTENDED_PRIORITY : Allows the user to program finer grained control of how tasks with equal priority are handled by the scheduler.
+		- ASMITH_TASK_MEMORY_OPTIMISED : Compressed the internal memory layout of the Task to from 20+ bytes to 8 bytes. Exceptions and ASMITH_TASK_EXTENDED_PRIORITY are not allowed in this mode.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
 	class Task {
@@ -53,18 +59,20 @@ namespace asmith {
 		};
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
-		typedef uint32_t Priority;	//!< Defines the order in which Tasks are executed.
+		typedef uint32_t Priority;	
 #else
-		typedef uint8_t Priority;	//!< Defines the order in which Tasks are executed.
-#endif
+		typedef uint8_t Priority;
+#endif								//!< Defines the order in which Tasks are executed.
 
 		enum : Priority {
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
-#if ASMITH_TASK_EXTENDED_PRIORITY
-			PRIORITY_HIGHEST = UINT32_MAX,								//!< The highest prority level supported by the Scheduler.
+#if ASMITH_TASK_MEMORY_OPTIMISED
+			PRIORITY_HIGHEST = 64u,
+#elif ASMITH_TASK_EXTENDED_PRIORITY
+			PRIORITY_HIGHEST = UINT32_MAX,
 #else
-			PRIORITY_HIGHEST = UINT8_MAX,								//!< The highest prority level supported by the Scheduler.
-#endif
+			PRIORITY_HIGHEST = UINT8_MAX,								
+#endif	//!< The highest prority level supported by the Scheduler.
 			PRIORITY_MIDDLE = PRIORITY_HIGHEST / 2u,					//!< The default priority level.
 			PRIORITY_HIGH = PRIORITY_MIDDLE + (PRIORITY_MIDDLE / 2u),	//!< Halfway between PRIORITY_MIDDLE and PRIORITY_HIGHEST.
 			PRIORITY_LOW = PRIORITY_MIDDLE - (PRIORITY_MIDDLE / 2u)		//!< Halfway between PRIORITY_MIDDLE and PRIORITY_LOWEST.
@@ -75,13 +83,29 @@ namespace asmith {
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete;
 
+		/*!
+			\return Pointer to an attached scheduler, nullptr if none 
+		*/
+		Scheduler* _GetScheduler() const throw();
+
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		uint8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
+#else
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
+#endif
 #if ASMITH_TASK_EXTENDED_PRIORITY
 		float _extended_priority;		//!< Caches the last result returned by Task::GetExtendedPriority() to avoid overhead from virtual function calls, stored by Task::SetPriority()
 #endif
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		struct {
+			uint8_t _priority : 4u;		//!< Stores the scheduling priority of the task
+			uint8_t _state : 4u;		//!< Stores the current state of the task
+		};
+#else
 		Priority _priority;				//!< Stores the scheduling priority of the task
 		State _state;					//!< Stores the current state of the task
+#endif
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
@@ -169,7 +193,7 @@ namespace asmith {
 			\return The current state of the Task.
 		*/
 		inline State GetState() const throw() {
-			return _state;
+			return static_cast<State>(_state);
 		}
 
 		/*!
@@ -185,8 +209,9 @@ namespace asmith {
 			\return The scheduler handling this Task.
 		*/
 		inline Scheduler& GetScheduler() const {
-			if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-			return *_scheduler;
+			Scheduler* const tmp = _GetScheduler();
+			if (tmp == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
+			return *tmp;
 		}
 
 	};
