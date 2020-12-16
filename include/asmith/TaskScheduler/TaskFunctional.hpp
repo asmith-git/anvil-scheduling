@@ -98,7 +98,7 @@ namespace asmith {
 			Function _payload; //!< The function object that will be called by the task
 		protected:
 			void Execute() final {
-				_result = _payload();
+				this->SetResult(_payload());
 			}
 #if ASMITH_TASK_CALLBACKS
 			void OnScheduled() final {

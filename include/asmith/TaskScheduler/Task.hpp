@@ -229,8 +229,12 @@ namespace asmith {
 	class TaskWithReturn : public Task {
 	public:
 		typedef R Result;
-	protected:
+	private:
 		Result _result;
+	protected:
+		inline void SetResult(Result result) {
+			_result = result;
+		}
 	public:
 		TaskWithReturn() :
 			Task()
