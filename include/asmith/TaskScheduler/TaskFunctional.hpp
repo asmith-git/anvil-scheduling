@@ -62,18 +62,28 @@ namespace asmith {
 			}
 #endif
 		public:
-			TaskFunctional_NoReturn(Function&& payload) :
+			TaskFunctional_NoReturn() :
+				Task(),
+				_payload()
+			{}
+
+			TaskFunctional_NoReturn(Function payload) :
 				Task(),
 				_payload(std::move(payload))
 			{}
 
-			TaskFunctional_NoReturn(const Function& payload) :
-				Task(),
-				_payload(payload)
-			{}
-
 			virtual ~TaskFunctional_NoReturn() {
 
+			}
+
+			/*!
+				\brief Change the payload function object.
+				\detail Will throw exception if not in Task::STATE_INITIALISED
+				\param payload The new function object.
+			*/
+			inline void SetPayload(const Function& payload) {
+				if (this->GetState() != Task::STATE_INITIALISED) throw std::runtime_error("TaskFunctional_NoReturn::SetPayload : Cannot set payload function unless Task is in STATE_INITIALISED");
+				_payload = payload;
 			}
 
 		};
@@ -111,18 +121,28 @@ namespace asmith {
 			}
 #endif
 		public:
-			TaskFunctional_Return(Function&& payload) :
+			TaskFunctional_Return() :
+				TaskWithReturn<R>(),
+				_payload()
+			{}
+
+			TaskFunctional_Return(Function payload) :
 				TaskWithReturn<R>(),
 				_payload(std::move(payload))
 			{}
 	
-			TaskFunctional_Return(const Function& payload) :
-				TaskWithReturn<R>(),
-				_payload(payload)
-			{}
-	
 			virtual ~TaskFunctional_Return() {
 	
+			}
+
+			/*!
+				\brief Change the payload function object.
+				\detail Will throw exception if not in Task::STATE_INITIALISED
+				\param payload The new function object.
+			*/
+			inline void SetPayload(const Function& payload) {
+				if (this->GetState() != Task::STATE_INITIALISED) throw std::runtime_error("TaskFunctional_NoReturn::SetPayload : Cannot set payload function unless Task is in STATE_INITIALISED");
+				_payload = payload;
 			}
 	
 		};
