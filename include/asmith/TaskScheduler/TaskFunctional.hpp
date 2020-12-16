@@ -38,7 +38,6 @@ namespace asmith {
 			\details Could be a raw function pointer or a std::function.
 			\tparam F The function object type that this Task will wrap.
 			\see TaskFunctional
-			\see TaskFunctional_Return
 		*/
 		template<class F>
 		class TaskFunctional_NoReturn final : public Task {
@@ -88,7 +87,6 @@ namespace asmith {
 			\details Could be a raw function pointer or a std::function.
 			\tparam F The function object type that this Task will wrap.
 			\see TaskFunctional
-			\see TaskFunctional_NoReturn
 		*/
 		template<class R, class F>
 		class TaskFunctional_Return final : public TaskWithReturn<R> {
@@ -129,6 +127,14 @@ namespace asmith {
 	
 		};
 
+		/*!
+			\brief Specialise this template to tell the compiler which Task child class should be used for differen function types.
+			\details This was intended for allowing return values but may also have other uses.
+			\tparam F The function object type
+			\see TaskFunctional
+			\see TaskFunctional_Return
+			\see TaskFunctional_NoReturn
+		*/
 		template<class F>
 		struct TaskFunctionalSelector {
 			typedef TaskFunctional_NoReturn<F> type;
@@ -146,6 +152,12 @@ namespace asmith {
 
 	}
 
+	/*!
+		\brief Alias for a Task which can wrap a function object.
+		\details Uses detail::TaskFunctionalSelector to determine which class to use.
+		\tparam F The function object type
+		\see detail::TaskFunctionalSelector
+	*/
 	template<class F>
 	using TaskFunctional = typename detail::TaskFunctionalSelector<F>::type;
 
