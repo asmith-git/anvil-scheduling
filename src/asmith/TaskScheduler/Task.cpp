@@ -24,7 +24,6 @@
 #include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
-#include "asmith/TaskScheduler/MultiTask.hpp"
 
 namespace asmith {
 
