@@ -215,6 +215,42 @@ namespace asmith {
 		}
 
 	};
+	
+	/*!
+		\class Task
+		\author Adam G. Smith
+		\date December 2020
+		\copyright MIT License
+		\brief Extends the Task structure to allow for a return values.
+		\details Call TaskWithReturn::Get() instead of Task::Wait() to obtain the result.
+		\see Task
+	*/
+	template<class R>
+	class TaskWithReturn : public Task {
+	public:
+		typedef R Result;
+	protected:
+		Result _result;
+	public:
+		TaskWithReturn() :
+			Task()
+		{}
+
+		virtual ~TaskWithReturn() {
+
+		}
+
+		/*!
+			\brief Wait for the task to complete then return the result.
+			\return The value returned by task execution.
+			\see Wait
+		*/
+		Result& Get() {
+			Wait();
+			return _result;
+		}
+
+	};
 
 }
 
