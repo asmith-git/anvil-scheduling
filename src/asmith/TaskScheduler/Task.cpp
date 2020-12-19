@@ -136,6 +136,7 @@ namespace asmith {
 				while (i != end) {
 					if (*i == this) {
 						scheduler->_task_queue.erase(i);
+						notify = true;
 						break;
 					}
 					++i;
