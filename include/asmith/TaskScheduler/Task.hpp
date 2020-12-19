@@ -33,6 +33,12 @@ namespace asmith {
 	#error ASMITH_TASK_EXTENDED_PRIORITY is incompatible with ASMITH_TASK_MEMORY_OPTIMISED
 #endif
 
+#if ASMITH_TASK_MEMORY_OPTIMISED
+#define ASMITH_TASK_HAS_EXCEPTIONS 0
+#else
+#define ASMITH_TASK_HAS_EXCEPTIONS 1
+#endif 
+
 	/*!
 		\class Task
 		\author Adam G. Smith
@@ -97,9 +103,13 @@ namespace asmith {
 #if ASMITH_TASK_MEMORY_OPTIMISED
 		uint8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
 #else
-		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
+
+#if ASMITH_TASK_HAS_EXCEPTIONS
+	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
+#endif
+
 #if ASMITH_TASK_EXTENDED_PRIORITY
 		float _extended_priority;		//!< Caches the last result returned by Task::GetExtendedPriority() to avoid overhead from virtual function calls, stored by Task::SetPriority()
 #endif

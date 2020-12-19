@@ -147,7 +147,7 @@ namespace asmith {
 			return _state == Task::STATE_COMPLETE;
 		});
 
-#if !ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
 		if (_exception) {
 			std::exception_ptr tmp = _exception;
@@ -211,9 +211,7 @@ HANDLE_ERROR:
 		try {
 			OnExecution();
 		} catch (...) {
-#if ASMITH_TASK_MEMORY_OPTIMISED
-			//! \bug Exceptions are not allowed in ASMITH_TASK_MEMORY_OPTIMISED so is ignored
-#else
+#if ASMITH_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
 		}
@@ -355,6 +353,8 @@ HANDLE_ERROR:
 			t._scheduler_index = GetSchedulerIndex(*this);
 #else
 			t._scheduler = this;
+#endif
+#if ASMITH_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
 #endif
 
@@ -363,7 +363,9 @@ HANDLE_ERROR:
 			try {
 				t.OnScheduled();
 			} catch (...) {
+#if ASMITH_TASK_HAS_EXCEPTIONS
 				t._exception = std::current_exception();
+#endif
 				t.Cancel();
 			}
 #endif
