@@ -91,7 +91,7 @@ namespace asmith {
 		void Execute() throw();
 
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
-		uint8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
+		int8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
 #else
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif

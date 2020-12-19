@@ -29,7 +29,7 @@ namespace asmith {
 
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
-	enum { MAX_SCHEDULERS = 255u };
+	enum { MAX_SCHEDULERS = INT8_MAX };
 	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
 
 	namespace detail {
@@ -80,7 +80,7 @@ namespace asmith {
 
 	Task::Task() :
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
-		_scheduler_index(0u),
+		_scheduler_index(-1),
 #else
 		_scheduler(nullptr),
 #endif
@@ -155,7 +155,7 @@ namespace asmith {
 			// State change and cleanup
 			_state = Task::STATE_CANCELED;
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
-			_scheduler_index = 0u;
+			_scheduler_index = -1;
 #else
 			_scheduler = nullptr;
 #endif
@@ -225,6 +225,7 @@ HANDLE_ERROR:
 
 	Scheduler* Task::_GetScheduler() const throw() {
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+		if (_scheduler_index < 0) return nullptr;
 		return g_scheduler_list[_scheduler_index];
 #else
 		return _scheduler;
@@ -249,7 +250,7 @@ HANDLE_ERROR:
 
 		// Post-execution cleanup
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
-		_scheduler_index = 0u;
+		_scheduler_index = -1;
 #else
 		_scheduler = nullptr;
 #endif
