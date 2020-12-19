@@ -61,6 +61,11 @@ namespace asmith {
 
 			}
 #endif
+#if ASMITH_TASK_DELAY_SCHEDULING
+			bool IsReadyToExecute() const throw() final {
+				return true;
+			}
+#endif
 		public:
 			TaskFunctional_NoReturn() :
 				Task(),
@@ -118,6 +123,11 @@ namespace asmith {
 		}
 			void OnResume() final {
 	
+			}
+#endif
+#if ASMITH_TASK_DELAY_SCHEDULING
+			bool IsReadyToExecute() const throw() final {
+				return true;
 			}
 #endif
 		public:

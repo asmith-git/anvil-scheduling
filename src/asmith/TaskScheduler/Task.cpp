@@ -187,8 +187,23 @@ namespace asmith {
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			if (_task_queue.empty()) return false;
+#if ASMITH_TASK_DELAY_SCHEDULING
+			// Scan the queue backwards for a task that is ready to execute
+			auto i = _task_queue.rbegin();
+			auto end = _task_queue.rend();
+			while (i != end) {
+				if ((**i).IsReadyToExecute()) {
+					task = *i;
+					_task_queue.erase(std::next(i).base());
+					break;
+				}
+			}
+			if (task != nullptr) return false;
+#else
+			// Remove the task at the back of the queue
 			task = _task_queue.back();
 			_task_queue.pop_back();
+#endif
 		}
 
 		task->_state = Task::STATE_EXECUTING;

@@ -43,6 +43,7 @@ namespace asmith {
 		- ASMITH_TASK_CALLBACKS : Adds user callbacks when Task is scheduled, suspended or resumed.
 		- ASMITH_TASK_EXTENDED_PRIORITY : Allows the user to program finer grained control of how tasks with equal priority are handled by the scheduler.
 		- ASMITH_TASK_MEMORY_OPTIMISED : Compressed the internal memory layout of the Task to from 20+ bytes to 8 bytes. Exceptions and ASMITH_TASK_EXTENDED_PRIORITY are not allowed in this mode.
+		- ASMITH_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
 	class Task {
@@ -151,6 +152,10 @@ namespace asmith {
 			\details Exceptions thrown are handled the same way as if thrown by Task::Execute().
 		*/
 		virtual void OnResume() = 0;
+#endif
+
+#if ASMITH_TASK_DELAY_SCHEDULING
+		virtual bool IsReadyToExecute() const throw() = 0;
 #endif
 	public:
 		friend Scheduler;
