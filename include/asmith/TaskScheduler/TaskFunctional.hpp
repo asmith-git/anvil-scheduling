@@ -46,7 +46,7 @@ namespace asmith {
 		private:
 			Function _payload; //!< The function object that will be called by the task
 		protected:
-			void Execute() final {
+			void OnExecution() final {
 				_payload();
 			}
 #if ASMITH_TASK_CALLBACKS
@@ -110,7 +110,7 @@ namespace asmith {
 		private:
 			Function _payload; //!< The function object that will be called by the task
 		protected:
-			void Execute() final {
+			void OnExecution() final {
 				this->SetResult(_payload());
 			}
 #if ASMITH_TASK_CALLBACKS

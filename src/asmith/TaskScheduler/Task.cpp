@@ -166,6 +166,34 @@ namespace asmith {
 #endif
 	}
 
+	void Task::Execute() throw() {
+		// Remember the scheduler for later
+		Scheduler& const scheduler = GetScheduler();
+
+		// Execute the task
+		_state = Task::STATE_EXECUTING;
+		try {
+			OnExecution();
+		} catch (...) {
+#if ASMITH_TASK_MEMORY_OPTIMISED
+			//! \bug Exceptions are not allowed in ASMITH_TASK_MEMORY_OPTIMISED so is ignored
+#else
+			_exception = std::current_exception();
+#endif
+		}
+
+		// Post-execution cleanup
+		_state = Task::STATE_COMPLETE;
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		_scheduler_index = 0u;
+#else
+		_scheduler = nullptr;
+#endif
+
+		// Wake waiting threads
+		scheduler._task_queue_update.notify_all();
+	}
+
 	// Scheduler
 
 	Scheduler::Scheduler() {
@@ -220,27 +248,7 @@ namespace asmith {
 		if (task == nullptr) return false;
 
 		// Execute the task
-		task->_state = Task::STATE_EXECUTING;
-		try {
-			task->Execute();
-		} catch (...) {
-#if ASMITH_TASK_MEMORY_OPTIMISED
-			//! \bug Exceptions are not allowed in ASMITH_TASK_MEMORY_OPTIMISED so is ignored
-#else
-			task->_exception = std::current_exception();
-#endif
-		}
-
-		// Post-execution cleanup
-		task->_state = Task::STATE_COMPLETE;
-#if ASMITH_TASK_MEMORY_OPTIMISED
-		task->_scheduler_index = 0u;
-#else
-		task->_scheduler = nullptr;
-#endif
-
-		// Wake waiting threads
-		_task_queue_update.notify_all();
+		task->Execute();
 		return true;
 	}
 

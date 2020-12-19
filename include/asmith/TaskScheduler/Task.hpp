@@ -89,6 +89,8 @@ namespace asmith {
 		*/
 		Scheduler* _GetScheduler() const throw();
 
+		void Execute() throw();
+
 #if ASMITH_TASK_MEMORY_OPTIMISED
 		uint8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
 #else
@@ -110,7 +112,7 @@ namespace asmith {
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
-			\details Should only be called during Task::Wait or Task::Execute.
+			\details Should only be called during Task::Wait or Task::OnExecution.
 			If the scheduler has tasks then it will execute them, otherwise the thread will be put to sleep.
 			\param condition Returns true when the task is no longer waiting for something.
 			\param max_sleep_milliseconds The longest period of time the thread should sleep for before checking the wait condition again.
@@ -122,7 +124,7 @@ namespace asmith {
 			\details Called by the scheduler when it is ready.
 			An exception thrown by this call can be retrieved when Task::Wait() is called.
 		*/
-		virtual void Execute() = 0;
+		virtual void OnExecution() = 0;
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
 		/*!
