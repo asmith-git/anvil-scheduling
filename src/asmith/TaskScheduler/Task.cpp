@@ -27,7 +27,7 @@
 
 namespace asmith {
 
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
 	enum { MAX_SCHEDULERS = 255u };
 	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
@@ -79,7 +79,7 @@ namespace asmith {
 	// Task
 
 	Task::Task() :
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index(0u),
 #else
 		_scheduler(nullptr),
@@ -125,13 +125,13 @@ namespace asmith {
 		try {
 			OnCancel();
 		} catch (...) {
-#if !ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
 		}
 #endif
 		_state = Task::STATE_COMPLETE;
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index = 0u;
 #else
 		_scheduler = nullptr;
@@ -195,7 +195,7 @@ HANDLE_ERROR:
 #endif 
 
 	Scheduler* Task::_GetScheduler() const throw() {
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		return g_scheduler_list[_scheduler_index];
 #else
 		return _scheduler;
@@ -218,7 +218,7 @@ HANDLE_ERROR:
 
 		// Post-execution cleanup
 		_state = Task::STATE_COMPLETE;
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index = 0u;
 #else
 		_scheduler = nullptr;
@@ -231,14 +231,14 @@ HANDLE_ERROR:
 	// Scheduler
 
 	Scheduler::Scheduler() {
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		AddScheduler(*this);
 #endif
 	}
 
 	Scheduler::~Scheduler() {
 		//! \bug Scheduled tasks are left in an undefined state
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		RemoveScheduler(*this);
 #endif
 	}
@@ -349,7 +349,7 @@ HANDLE_ERROR:
 			t._state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 			t._scheduler_index = GetSchedulerIndex(*this);
 #else
 			t._scheduler = this;

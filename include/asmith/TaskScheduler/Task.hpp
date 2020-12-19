@@ -34,9 +34,11 @@ namespace asmith {
 #endif
 
 #if ASMITH_TASK_MEMORY_OPTIMISED
-#define ASMITH_TASK_HAS_EXCEPTIONS 0
+	#define ASMITH_TASK_HAS_EXCEPTIONS 0
+	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 1
 #else
-#define ASMITH_TASK_HAS_EXCEPTIONS 1
+	#define ASMITH_TASK_HAS_EXCEPTIONS 1
+	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 0
 #endif 
 
 	/*!
@@ -100,7 +102,7 @@ namespace asmith {
 		*/
 		void Execute() throw();
 
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		uint8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
 #else
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
