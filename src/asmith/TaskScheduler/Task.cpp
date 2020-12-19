@@ -115,6 +115,30 @@ namespace asmith {
 #endif
 	}
 
+	bool Task::Cancel() throw() {
+		Scheduler* scheduler = _GetScheduler();
+		if (scheduler == nullptr) return false;
+
+		std::lock_guard<std::mutex> lock(scheduler->_mutex);
+		if (_state == STATE_EXECUTING || _state == STATE_COMPLETE) return false;
+#if ASMITH_TASK_CALLBACKS
+		try {
+			OnCancel();
+		} catch (...) {
+#if !ASMITH_TASK_MEMORY_OPTIMISED
+			_exception = std::current_exception();
+#endif
+		}
+#endif
+		_state = Task::STATE_COMPLETE;
+#if ASMITH_TASK_MEMORY_OPTIMISED
+		_scheduler_index = 0u;
+#else
+		_scheduler = nullptr;
+#endif
+		return true;
+	}
+
 	void Task::Wait() {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE) return;
@@ -135,21 +159,33 @@ namespace asmith {
 
 
 	void Task::SetPriority(const Priority priority) {
+		std::exception_ptr exception = nullptr;
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
 #if ASMITH_TASK_EXTENDED_PRIORITY
-				_extended_priority = GetExtendedPriority();
+				try {
+					_extended_priority = GetExtendedPriority();
+				} catch (...) {
+					exception = std::current_exception();
+					goto HANDLE_ERROR;
+				}
 #endif
 				_priority = priority;
 				scheduler->SortTaskQueue();
 			} else {
-				throw std::runtime_error("Priority of a task cannot be changed when executing");
+				exception = std::make_exception_ptr(std::runtime_error("Priority of a task cannot be changed when executing"));
+				goto HANDLE_ERROR;
 			}
 		} else {
 			_priority = priority;
 		}
+
+		return;
+HANDLE_ERROR:
+		Cancel();
+		std::rethrow_exception(exception);
 	}
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
@@ -168,7 +204,7 @@ namespace asmith {
 
 	void Task::Execute() throw() {
 		// Remember the scheduler for later
-		Scheduler& const scheduler = GetScheduler();
+		Scheduler* const scheduler = _GetScheduler();
 
 		// Execute the task
 		_state = Task::STATE_EXECUTING;
@@ -191,7 +227,7 @@ namespace asmith {
 #endif
 
 		// Wake waiting threads
-		scheduler._task_queue_update.notify_all();
+		if(scheduler) scheduler->_task_queue_update.notify_all();
 	}
 
 	// Scheduler
@@ -214,29 +250,51 @@ namespace asmith {
 		// Avoids overhead of locking during periods of low activity
 		if (_task_queue.empty()) return false;
 
-		// Lock the task queue so that other threads cannot access it
-		std::lock_guard<std::mutex> lock(_mutex);
-
-		// Check again that another thread hasn't emptied the queue while locking
-		if (_task_queue.empty()) return false;
-
 		Task* task = nullptr;
-#if ASMITH_TASK_DELAY_SCHEDULING
-		// Scan the queue backwards for a task that is ready to execute
-		auto i = _task_queue.rbegin();
-		auto end = _task_queue.rend();
-		while (i != end) {
-			if ((**i).IsReadyToExecute()) {
-				task = *i;
-				_task_queue.erase(std::next(i).base());
-				break;
+		bool notify = false;
+		{
+			// Lock the task queue so that other threads cannot access it
+			std::lock_guard<std::mutex> lock(_mutex);
+
+			// Check again that another thread hasn't emptied the queue while locking
+			if (_task_queue.empty()) return false;
+
+			{
+				// Remove tasks that have been canceled
+				auto i = _task_queue.begin();
+				auto end = _task_queue.end();
+				while (i != end) {
+					if ((**i)._state != Task::STATE_SCHEDULED) {
+						_task_queue.erase(i);
+						i = _task_queue.begin();
+						end = _task_queue.end();
+						notify = true;
+					}
+				}
 			}
-		}
+
+#if ASMITH_TASK_DELAY_SCHEDULING
+			// Scan the queue backwards for a task that is ready to execute
+			auto i = _task_queue.rbegin();
+			auto end = _task_queue.rend();
+			while (i != end) {
+				if ((**i).IsReadyToExecute()) {
+					task = *i;
+					_task_queue.erase(std::next(i).base());
+					break;
+				}
+			}
 #else
-		// Remove the task at the back of the queue
-		task = _task_queue.back();
-		_task_queue.pop_back();
+			// Remove the task at the back of the queue
+			task = _task_queue.back();
+			_task_queue.pop_back();
 #endif
+		}
+
+		// If something has happened to the task queue then notify yielding tasks
+		if (notify) _task_queue_update.notify_all();
+
+		// Return the task if one was found
 		return task;
 	}
 
@@ -288,9 +346,11 @@ namespace asmith {
 		}
 
 		for (uint32_t i = 0u; i < count; ++i) {
-			// State change
+			// Change state
 			Task& t = *tasks[i];
 			t._state = Task::STATE_SCHEDULED;
+
+			// Initialise scheduling data
 #if ASMITH_TASK_MEMORY_OPTIMISED
 			t._scheduler_index = GetSchedulerIndex(*this);
 #else
@@ -304,7 +364,7 @@ namespace asmith {
 				t.OnScheduled();
 			} catch (...) {
 				t._exception = std::current_exception();
-				t._state = Task::STATE_COMPLETE;
+				t.Cancel();
 			}
 #endif
 		}
@@ -313,9 +373,6 @@ namespace asmith {
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			for (uint32_t i = 0u; i < count; ++i) {
-#if ASMITH_TASK_CALLBACKS
-				if(tasks[i]->_state == Task::STATE_SCHEDULED)
-#endif
 				_task_queue.push_back(tasks[i]);
 			}
 

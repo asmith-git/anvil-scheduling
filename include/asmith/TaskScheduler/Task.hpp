@@ -89,6 +89,9 @@ namespace asmith {
 		*/
 		Scheduler* _GetScheduler() const throw();
 
+		/*!
+			\brief Calls Task::OnExecution() with proper state changes and exception handling
+		*/
 		void Execute() throw();
 
 #if ASMITH_TASK_MEMORY_OPTIMISED
@@ -154,6 +157,12 @@ namespace asmith {
 			\details Exceptions thrown are handled the same way as if thrown by Task::Execute().
 		*/
 		virtual void OnResume() = 0;
+
+		/*!
+			\brief Called a task is canceled.
+			\see Cancel
+		*/
+		virtual void OnCancel() = 0;
 #endif
 
 #if ASMITH_TASK_DELAY_SCHEDULING
@@ -188,6 +197,12 @@ namespace asmith {
 			Will throw exception if the task's state is STATE_EXECUTING or STATE_BLOCKED.
 		*/
 		void SetPriority(const Priority priority);
+
+		/*!
+			\brief Stop the task from being executed
+			\details Called when an exception is thrown during scheduling or execution.
+		*/
+		bool Cancel() throw();
 
 		/*!
 			\return True if Task::Wait() can be called.

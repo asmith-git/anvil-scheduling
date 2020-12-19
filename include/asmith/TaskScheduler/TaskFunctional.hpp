@@ -56,8 +56,13 @@ namespace asmith {
 		
 			void OnBlock() final {
 
-		}
+			}
+
 			void OnResume() final {
+
+			}
+
+			void OnCancel() final {
 
 			}
 #endif
@@ -120,9 +125,14 @@ namespace asmith {
 			
 			void OnBlock() final {
 	
-		}
+			}
+
 			void OnResume() final {
 	
+			}
+
+			void OnCancel() final {
+
 			}
 #endif
 #if ASMITH_TASK_DELAY_SCHEDULING
