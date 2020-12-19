@@ -25,6 +25,19 @@
 
 #include <cstdint>
 
+	// Check for invalid exension options
+#if ASMITH_TASK_MEMORY_OPTIMISED && ASMITH_TASK_EXTENDED_PRIORITY
+	#error ASMITH_TASK_EXTENDED_PRIORITY is incompatible with ASMITH_TASK_MEMORY_OPTIMISED
+#endif
+
+#if ASMITH_TASK_MEMORY_OPTIMISED
+	#define ASMITH_TASK_HAS_EXCEPTIONS 0
+	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 1
+#else
+	#define ASMITH_TASK_HAS_EXCEPTIONS 1
+	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 0
+#endif 
+
 namespace asmith {
 	class Task;
 	class Scheduler;

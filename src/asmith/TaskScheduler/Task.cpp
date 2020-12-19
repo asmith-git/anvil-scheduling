@@ -116,35 +116,64 @@ namespace asmith {
 	}
 
 	bool Task::Cancel() throw() {
+		// If no scheduler is attached to this task then it cannot be canceled
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr) return false;
 
-		std::lock_guard<std::mutex> lock(scheduler->_mutex);
-		if (_state == STATE_EXECUTING || _state == STATE_COMPLETE) return false;
+		// Lock the scheduler's task queue
+		bool notify = false;
+		{
+			std::lock_guard<std::mutex> lock(scheduler->_mutex);
+
+			// If the state is not scheduled then it cannot be canceled
+			if (_state != STATE_SCHEDULED) return false;
+
+			// Remove the task from the queue
+			//! \bug If the task cannot be found then something has gone wrong, but the code doesnt check for this
+			{
+				auto i = scheduler->_task_queue.begin();
+				auto end = scheduler->_task_queue.end();
+				while (i != end) {
+					if (*i == this) {
+						scheduler->_task_queue.erase(i);
+						break;
+					}
+					++i;
+				}
+			}
+
 #if ASMITH_TASK_CALLBACKS
-		try {
-			OnCancel();
-		} catch (...) {
+			// Call the cancelation callback
+			try {
+				OnCancel();
+			} catch (...) {
 #if ASMITH_TASK_HAS_EXCEPTIONS
-			_exception = std::current_exception();
+				_exception = std::current_exception();
+#endif
+			}
+#endif
+			// State change and cleanup
+			_state = Task::STATE_CANCELED;
+#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+			_scheduler_index = 0u;
+#else
+			_scheduler = nullptr;
 #endif
 		}
-#endif
-		_state = Task::STATE_COMPLETE;
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
-		_scheduler_index = 0u;
-#else
-		_scheduler = nullptr;
-#endif
+
+		// Notify anythign waiting for changes to the task queue
+		if (notify) scheduler->_task_queue_update.notify_all();
+
+		// Canceled successfully
 		return true;
 	}
 
 	void Task::Wait() {
 		Scheduler* scheduler = _GetScheduler();
-		if (scheduler == nullptr || _state == Task::STATE_COMPLETE) return;
+		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
 		scheduler->Yield([this]()->bool {
-			return _state == Task::STATE_COMPLETE;
+			return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
 		});
 
 #if ASMITH_TASK_HAS_EXCEPTIONS
@@ -210,14 +239,15 @@ HANDLE_ERROR:
 		_state = Task::STATE_EXECUTING;
 		try {
 			OnExecution();
+			_state = Task::STATE_COMPLETE;
 		} catch (...) {
 #if ASMITH_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
+			_state = Task::STATE_CANCELED;
 		}
 
 		// Post-execution cleanup
-		_state = Task::STATE_COMPLETE;
 #if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index = 0u;
 #else
@@ -268,6 +298,7 @@ HANDLE_ERROR:
 						end = _task_queue.end();
 						notify = true;
 					}
+					++i;
 				}
 			}
 
@@ -281,6 +312,7 @@ HANDLE_ERROR:
 					_task_queue.erase(std::next(i).base());
 					break;
 				}
+				++i;
 			}
 #else
 			// Remove the task at the back of the queue

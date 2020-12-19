@@ -28,19 +28,6 @@
 
 namespace asmith {
 
-	// Check for invalid exension options
-#if ASMITH_TASK_MEMORY_OPTIMISED && ASMITH_TASK_EXTENDED_PRIORITY
-	#error ASMITH_TASK_EXTENDED_PRIORITY is incompatible with ASMITH_TASK_MEMORY_OPTIMISED
-#endif
-
-#if ASMITH_TASK_MEMORY_OPTIMISED
-	#define ASMITH_TASK_HAS_EXCEPTIONS 0
-	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 1
-#else
-	#define ASMITH_TASK_HAS_EXCEPTIONS 1
-	#define ASMITH_TASK_GLOBAL_SCHEDULER_LIST 0
-#endif 
-
 	/*!
 		\class Task
 		\author Adam G. Smith
@@ -64,7 +51,8 @@ namespace asmith {
 			STATE_SCHEDULED,	//!< The task has been scheduled and is awaiting execution.
 			STATE_EXECUTING,	//!< The task is currently running.
 			STATE_BLOCKED,		//!< Execution was started but the Task is currently suspended.
-			STATE_COMPLETE		//!< The execution has finished or an error has occurred.
+			STATE_COMPLETE,		//!< The execution has finished
+			STATE_CANCELED		//!< The task was canceled due to user request or an exception being thrown
 		};
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
@@ -191,7 +179,7 @@ namespace asmith {
 
 		/*!
 			\brief Destroy the task
-			\details Undefined behaviour if state is not STATE_INITIALISED or STATE_COMPLETE
+			\details Undefined behaviour if state is not STATE_INITIALISED, STATE_COMPLETE or STATE_CANCELED
 		*/
 		virtual ~Task();
 
