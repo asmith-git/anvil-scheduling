@@ -42,6 +42,8 @@ namespace asmith {
 
 		std::vector<Task*> _task_queue;
 		void SortTaskQueue() throw();
+
+		Task* RemoveNextTaskFromQueue() throw();
 	protected:
 		std::mutex _mutex;
 		std::condition_variable _task_queue_update;

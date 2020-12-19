@@ -181,31 +181,45 @@ namespace asmith {
 #endif
 	}
 
-	bool Scheduler::TryToExecuteTask() throw() {
+	Task* Scheduler::RemoveNextTaskFromQueue() throw() {
+		// Check if there are tasks before locking the queue
+		// Avoids overhead of locking during periods of low activity
+		if (_task_queue.empty()) return false;
+
+		// Lock the task queue so that other threads cannot access it
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		// Check again that another thread hasn't emptied the queue while locking
+		if (_task_queue.empty()) return false;
+
 		Task* task = nullptr;
-
-		{
-			std::lock_guard<std::mutex> lock(_mutex);
-			if (_task_queue.empty()) return false;
 #if ASMITH_TASK_DELAY_SCHEDULING
-			// Scan the queue backwards for a task that is ready to execute
-			auto i = _task_queue.rbegin();
-			auto end = _task_queue.rend();
-			while (i != end) {
-				if ((**i).IsReadyToExecute()) {
-					task = *i;
-					_task_queue.erase(std::next(i).base());
-					break;
-				}
+		// Scan the queue backwards for a task that is ready to execute
+		auto i = _task_queue.rbegin();
+		auto end = _task_queue.rend();
+		while (i != end) {
+			if ((**i).IsReadyToExecute()) {
+				task = *i;
+				_task_queue.erase(std::next(i).base());
+				break;
 			}
-			if (task != nullptr) return false;
-#else
-			// Remove the task at the back of the queue
-			task = _task_queue.back();
-			_task_queue.pop_back();
-#endif
 		}
+#else
+		// Remove the task at the back of the queue
+		task = _task_queue.back();
+		_task_queue.pop_back();
+#endif
+		return task;
+	}
 
+	bool Scheduler::TryToExecuteTask() throw() {
+		// Get the next task
+		Task* task = RemoveNextTaskFromQueue();
+
+		// If there isn't a task available then return
+		if (task == nullptr) return false;
+
+		// Execute the task
 		task->_state = Task::STATE_EXECUTING;
 		try {
 			task->Execute();
@@ -216,6 +230,8 @@ namespace asmith {
 			task->_exception = std::current_exception();
 #endif
 		}
+
+		// Post-execution cleanup
 		task->_state = Task::STATE_COMPLETE;
 #if ASMITH_TASK_MEMORY_OPTIMISED
 		task->_scheduler_index = 0u;
@@ -225,7 +241,6 @@ namespace asmith {
 
 		// Wake waiting threads
 		_task_queue_update.notify_all();
-
 		return true;
 	}
 
