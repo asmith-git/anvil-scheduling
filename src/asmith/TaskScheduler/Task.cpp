@@ -84,7 +84,11 @@ namespace asmith {
 #else
 		_scheduler(nullptr),
 #endif
+#if ASMITH_TASK_EXTENDED_PRIORITY
+		_priority(static_cast<float>(PRIORITY_MIDDLE) * 10000.f),
+#else
 		_priority(PRIORITY_MIDDLE),
+#endif
 		_state(STATE_INITIALISED)
 	{}
 
@@ -196,13 +200,16 @@ namespace asmith {
 			if (_state == STATE_SCHEDULED) {
 #if ASMITH_TASK_EXTENDED_PRIORITY
 				try {
-					_extended_priority = GetExtendedPriority();
+					_priority = GetExtendedPriority();
+					if (_priority > 9999.f) throw std::runtime_error("Task::SetPriority : Maximum priority modifier is 9999");
 				} catch (...) {
 					exception = std::current_exception();
 					goto HANDLE_ERROR;
 				}
-#endif
+				_priority += static_cast<float>(priority) * 10000.f;
+#else
 				_priority = priority;
+#endif
 				scheduler->SortTaskQueue();
 			} else {
 				exception = std::make_exception_ptr(std::runtime_error("Priority of a task cannot be changed when executing"));
@@ -216,6 +223,15 @@ namespace asmith {
 HANDLE_ERROR:
 		Cancel();
 		std::rethrow_exception(exception);
+	}
+
+	Task::Priority Task::GetPriority() const throw() {
+		//if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
+#if ASMITH_TASK_EXTENDED_PRIORITY
+		return static_cast<Priority>(_priority / 10000.f);
+#else
+		return _priority;
+#endif
 	}
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
@@ -362,12 +378,7 @@ HANDLE_ERROR:
 
 	void Scheduler::SortTaskQueue() throw() {
 		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* const lhs, const Task* const rhs)->bool {
-#if ASMITH_TASK_EXTENDED_PRIORITY
-			return lhs->_priority < rhs->_priority ? true : lhs->_extended_priority < rhs->_extended_priority;
-
-#else
 			return lhs->_priority < rhs->_priority;
-#endif
 		});
 	}
 

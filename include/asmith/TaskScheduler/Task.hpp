@@ -56,7 +56,7 @@ namespace asmith {
 		};
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
-		typedef uint32_t Priority;	
+		typedef uint16_t Priority;	
 #else
 		typedef uint8_t Priority;
 #endif								//!< Defines the order in which Tasks are executed.
@@ -66,7 +66,7 @@ namespace asmith {
 #if ASMITH_TASK_MEMORY_OPTIMISED
 			PRIORITY_HIGHEST = 64u,
 #elif ASMITH_TASK_EXTENDED_PRIORITY
-			PRIORITY_HIGHEST = UINT32_MAX,
+			PRIORITY_HIGHEST = UINT16_MAX,
 #else
 			PRIORITY_HIGHEST = UINT8_MAX,								
 #endif	//!< The highest prority level supported by the Scheduler.
@@ -100,16 +100,17 @@ namespace asmith {
 	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
 
-#if ASMITH_TASK_EXTENDED_PRIORITY
-		float _extended_priority;		//!< Caches the last result returned by Task::GetExtendedPriority() to avoid overhead from virtual function calls, stored by Task::SetPriority()
-#endif
 #if ASMITH_TASK_MEMORY_OPTIMISED
 		struct {
 			uint8_t _priority : 4u;		//!< Stores the scheduling priority of the task
 			uint8_t _state : 4u;		//!< Stores the current state of the task
 		};
 #else
+#if ASMITH_TASK_EXTENDED_PRIORITY
+		float _priority;				//!< Stores the scheduling priority of the task
+#else
 		Priority _priority;				//!< Stores the scheduling priority of the task
+#endif
 		State _state;					//!< Stores the current state of the task
 #endif
 	protected:
@@ -131,10 +132,11 @@ namespace asmith {
 
 #if ASMITH_TASK_EXTENDED_PRIORITY
 		/*!
-			\brief Return a user defined priority extension
+			\brief Return a user defined priority modifier.
 			\details Allows the user to have more control over the ordering of tasks with the same priority level.
 			Suggested uses are to run longer tasks first, or to delay tasks that share some external resource with another task that is running.
 			Called by Task::SetPriority()
+			\return The priority modifer, can be any number be between 0 and 9999
 		*/
 		virtual float GetExtendedPriority() const;
 #endif
@@ -221,10 +223,7 @@ namespace asmith {
 		/*!
 			\return The current priority of the Task.
 		*/
-		inline Priority GetPriority() const throw() {
-			//if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-			return _priority;
-		}
+		Priority GetPriority() const throw();
 
 		/*!
 			\details Will thrown an exception if no scheduler is attached to this Task.
