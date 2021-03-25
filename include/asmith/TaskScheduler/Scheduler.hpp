@@ -20,8 +20,8 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#ifndef ASMITH_SCHEDULER_SCHEDULER_HPP
-#define ASMITH_SCHEDULER_SCHEDULER_HPP
+#ifndef ANVIL_SCHEDULER_SCHEDULER_HPP
+#define ANVIL_SCHEDULER_SCHEDULER_HPP
 
 #include <mutex>
 #include <condition_variable>
@@ -30,7 +30,7 @@
 #include <memory>
 #include "asmith/TaskScheduler/Core.hpp"
 
-namespace asmith {
+namespace anvil {
 
 	class Scheduler {
 	private:

@@ -20,12 +20,12 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#ifndef ASMITH_SCHEDULER_TASK_FUNCTIONAL_HPP
-#define ASMITH_SCHEDULER_TASK_FUNCTIONAL_HPP
+#ifndef ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
+#define ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
 
 #include "asmith/TaskScheduler/Task.hpp"
 
-namespace asmith {
+namespace anvil {
 
 	namespace detail {
 
@@ -49,7 +49,7 @@ namespace asmith {
 			void OnExecution() final {
 				_payload();
 			}
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 			void OnScheduled() final {
 
 			}
@@ -66,7 +66,7 @@ namespace asmith {
 
 			}
 #endif
-#if ASMITH_TASK_DELAY_SCHEDULING
+#if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;
 			}
@@ -118,7 +118,7 @@ namespace asmith {
 			void OnExecution() final {
 				this->SetResult(_payload());
 			}
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 			void OnScheduled() final {
 	
 			}
@@ -135,7 +135,7 @@ namespace asmith {
 
 			}
 #endif
-#if ASMITH_TASK_DELAY_SCHEDULING
+#if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;
 			}

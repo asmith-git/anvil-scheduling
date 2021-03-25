@@ -20,13 +20,13 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#ifndef ASMITH_SCHEDULER_TASK_HPP
-#define ASMITH_SCHEDULER_TASK_HPP
+#ifndef ANVIL_SCHEDULER_TASK_HPP
+#define ANVIL_SCHEDULER_TASK_HPP
 
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
-namespace asmith {
+namespace anvil {
 
 	/*!
 		\class Task
@@ -35,10 +35,10 @@ namespace asmith {
 		\copyright MIT License
 		\brief Base structure for implementing Task based parallel programming.
 		\details There are currently three optional compiler constants that can be defined (> 0) to enable extension features:
-		- ASMITH_TASK_CALLBACKS : Adds user callbacks when Task is scheduled, suspended or resumed.
-		- ASMITH_TASK_EXTENDED_PRIORITY : Allows the user to program finer grained control of how tasks with equal priority are handled by the scheduler.
-		- ASMITH_TASK_MEMORY_OPTIMISED : Compressed the internal memory layout of the Task to from 20+ bytes to 8 bytes. Exceptions and ASMITH_TASK_EXTENDED_PRIORITY are not allowed in this mode.
-		- ASMITH_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
+		- ANVIL_TASK_CALLBACKS : Adds user callbacks when Task is scheduled, suspended or resumed.
+		- ANVIL_TASK_EXTENDED_PRIORITY : Allows the user to program finer grained control of how tasks with equal priority are handled by the scheduler.
+		- ANVIL_TASK_MEMORY_OPTIMISED : Compressed the internal memory layout of the Task to from 20+ bytes to 8 bytes. Exceptions and ANVIL_TASK_EXTENDED_PRIORITY are not allowed in this mode.
+		- ANVIL_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
 	class Task {
@@ -55,7 +55,7 @@ namespace asmith {
 			STATE_CANCELED		//!< The task was canceled due to user request or an exception being thrown
 		};
 
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 		typedef uint16_t Priority;	
 #else
 		typedef uint8_t Priority;
@@ -63,9 +63,9 @@ namespace asmith {
 
 		enum : Priority {
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ANVIL_TASK_MEMORY_OPTIMISED
 			PRIORITY_HIGHEST = 64u,
-#elif ASMITH_TASK_EXTENDED_PRIORITY
+#elif ANVIL_TASK_EXTENDED_PRIORITY
 			PRIORITY_HIGHEST = UINT16_MAX,
 #else
 			PRIORITY_HIGHEST = UINT8_MAX,								
@@ -90,23 +90,23 @@ namespace asmith {
 		*/
 		void Execute() throw();
 
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		int8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
 #else
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
 
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
 
-#if ASMITH_TASK_MEMORY_OPTIMISED
+#if ANVIL_TASK_MEMORY_OPTIMISED
 		struct {
 			uint8_t _priority : 4u;		//!< Stores the scheduling priority of the task
 			uint8_t _state : 4u;		//!< Stores the current state of the task
 		};
 #else
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 		float _priority;				//!< Stores the scheduling priority of the task
 #else
 		Priority _priority;				//!< Stores the scheduling priority of the task
@@ -130,7 +130,7 @@ namespace asmith {
 		*/
 		virtual void OnExecution() = 0;
 
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 		/*!
 			\brief Return a user defined priority modifier.
 			\details Allows the user to have more control over the ordering of tasks with the same priority level.
@@ -140,7 +140,7 @@ namespace asmith {
 		*/
 		virtual float GetExtendedPriority() const;
 #endif
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 		/*!
 			\brief Called when the task is being added to the scheduler's work queue.
 			\details If an exception is thrown then the task goes into OnScheduled and the task will not be scheduled.
@@ -167,7 +167,7 @@ namespace asmith {
 		virtual void OnCancel() = 0;
 #endif
 
-#if ASMITH_TASK_DELAY_SCHEDULING
+#if ANVIL_TASK_DELAY_SCHEDULING
 		virtual bool IsReadyToExecute() const throw() = 0;
 #endif
 	public:

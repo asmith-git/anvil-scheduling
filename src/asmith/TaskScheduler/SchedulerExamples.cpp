@@ -22,7 +22,7 @@
 
 #include "asmith/TaskScheduler/SchedulerExamples.hpp"
 
-namespace asmith {
+namespace anvil {
 
 	// ExampleThread
 

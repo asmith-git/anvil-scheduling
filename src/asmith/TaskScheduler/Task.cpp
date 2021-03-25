@@ -27,7 +27,7 @@
 
 namespace asmith {
 
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
 	enum { MAX_SCHEDULERS = INT8_MAX };
 	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
@@ -79,12 +79,12 @@ namespace asmith {
 	// Task
 
 	Task::Task() :
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index(-1),
 #else
 		_scheduler(nullptr),
 #endif
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 		_priority(static_cast<float>(PRIORITY_MIDDLE) * 10000.f),
 #else
 		_priority(PRIORITY_MIDDLE),
@@ -101,7 +101,7 @@ namespace asmith {
 
 		if (condition()) return;
 
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 		OnBlock();
 #endif
 
@@ -114,7 +114,7 @@ namespace asmith {
 		}
 		_state = STATE_EXECUTING;
 
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 		OnResume();
 #endif
 	}
@@ -147,19 +147,19 @@ namespace asmith {
 				}
 			}
 
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 			// Call the cancelation callback
 			try {
 				OnCancel();
 			} catch (...) {
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 				_exception = std::current_exception();
 #endif
 			}
 #endif
 			// State change and cleanup
 			_state = Task::STATE_CANCELED;
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 			_scheduler_index = -1;
 #else
 			_scheduler = nullptr;
@@ -181,7 +181,7 @@ namespace asmith {
 			return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
 		});
 
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
 		if (_exception) {
 			std::exception_ptr tmp = _exception;
@@ -198,7 +198,7 @@ namespace asmith {
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 				try {
 					_priority = GetExtendedPriority();
 					if (_priority > 9999.f) throw std::runtime_error("Task::SetPriority : Maximum priority modifier is 9999");
@@ -227,21 +227,21 @@ HANDLE_ERROR:
 
 	Task::Priority Task::GetPriority() const throw() {
 		//if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 		return static_cast<Priority>(_priority / 10000.f);
 #else
 		return _priority;
 #endif
 	}
 
-#if ASMITH_TASK_EXTENDED_PRIORITY
+#if ANVIL_TASK_EXTENDED_PRIORITY
 	float Task::GetExtendedPriority() const {
 		return 0.f;
 	}
 #endif 
 
 	Scheduler* Task::_GetScheduler() const throw() {
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		if (_scheduler_index < 0) return nullptr;
 		return g_scheduler_list[_scheduler_index];
 #else
@@ -259,14 +259,14 @@ HANDLE_ERROR:
 			OnExecution();
 			_state = Task::STATE_COMPLETE;
 		} catch (...) {
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
 			_state = Task::STATE_CANCELED;
 		}
 
 		// Post-execution cleanup
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		_scheduler_index = -1;
 #else
 		_scheduler = nullptr;
@@ -279,14 +279,14 @@ HANDLE_ERROR:
 	// Scheduler
 
 	Scheduler::Scheduler() {
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		AddScheduler(*this);
 #endif
 	}
 
 	Scheduler::~Scheduler() {
 		//! \bug Scheduled tasks are left in an undefined state
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		RemoveScheduler(*this);
 #endif
 	}
@@ -320,7 +320,7 @@ HANDLE_ERROR:
 				}
 			}
 
-#if ASMITH_TASK_DELAY_SCHEDULING
+#if ANVIL_TASK_DELAY_SCHEDULING
 			// Scan the queue backwards for a task that is ready to execute
 			auto i = _task_queue.rbegin();
 			auto end = _task_queue.rend();
@@ -394,21 +394,21 @@ HANDLE_ERROR:
 			t._state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
-#if ASMITH_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 			t._scheduler_index = GetSchedulerIndex(*this);
 #else
 			t._scheduler = this;
 #endif
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
 #endif
 
-#if ASMITH_TASK_CALLBACKS
+#if ANVIL_TASK_CALLBACKS
 			// Task callback
 			try {
 				t.OnScheduled();
 			} catch (...) {
-#if ASMITH_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_HAS_EXCEPTIONS
 				t._exception = std::current_exception();
 #endif
 				t.Cancel();

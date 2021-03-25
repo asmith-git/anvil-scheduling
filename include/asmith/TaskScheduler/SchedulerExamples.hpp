@@ -20,14 +20,14 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-#ifndef ASMITH_SCHEDULER_SCHEDULER_EXAMPLE_HPP
-#define ASMITH_SCHEDULER_SCHEDULER_EXAMPLE_HPP
+#ifndef ANVIL_SCHEDULER_SCHEDULER_EXAMPLE_HPP
+#define ANVIL_SCHEDULER_SCHEDULER_EXAMPLE_HPP
 
 #include <atomic>
 #include <thread>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
-namespace asmith {
+namespace anvil {
 
 	class ExampleThread {
 	private:
