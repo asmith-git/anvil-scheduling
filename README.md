@@ -18,13 +18,14 @@ This allows programming of how the scheduler orders tasks that have equal priori
 
 ## Usage Examples
 ### Creating a Task
-If none of the optional extensions are enabled, then creating a custom Task is easy. All we need to do is override the OnExecution function with our custom behaviour.
+If none of the optional extensions are enabled, then creating a custom Task is easy. All we need to do is override the OnExecution() function with our custom behaviour.
 ```cpp
 // This task prints a message to std::cout, fairly simple
 class MyTask final : public anvil::Task {
 private:
 	std::string _message;
 protected:
+	// This is the function that gets called when the scheduler has decided to run the task
 	void OnExecution() final {
 		std::cout << _message << std::endl;
 	}
