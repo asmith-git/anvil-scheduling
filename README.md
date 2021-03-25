@@ -2,6 +2,19 @@
 This C++ library provides code for scheduling and parallel execution of tasks.
 This is an improved version of my older [multithread-task](https://github.com/asmith-git/multithread-task) project, which itself is a port of the task management system in a game engine I wrote a number of years ago.
 
+## Extensions
+This library has some optional features that can be enabled with compiler constants:
+#### ANVIL_TASK_DELAY_SCHEDULING
+This adds the virtual IsReadyToExecute() function to Task, which will prevent a Task from being executed until this returns true. This can be useful for holding tasks in the scheduler until some resource becomes available.
+#### ANVIL_TASK_CALLBACKS
+Adds the virtual functions OnScheduled(), OnBlock(), OnResume() and OnCancel() functions to task. These are called when the state of the task is about to be changed, which is usefull for debugging or monitoring the status of the scheduler.
+#### ANVIL_TASK_HAS_EXCEPTIONS
+Allows tasks to throw exceptions when executing, which will be caught and rethrown by Wait()
+#### ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+Reduces the memory footprint of Task objects to around half the normal size.
+#### ANVIL_TASK_EXTENDED_PRIORITY
+This allows programming of how the scheduler orders tasks that have equal priority using the GetExtendedPriority() function.
+
 
 ## Usage Examples
 ### Creating a Task
