@@ -38,6 +38,10 @@
 	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 0
 #endif 
 
+#ifndef ANVIL_NO_EXECUTE_ON_WAIT
+	#define ANVIL_NO_EXECUTE_ON_WAIT 0
+#endif
+
 namespace anvil {
 	class Task;
 	class Scheduler;

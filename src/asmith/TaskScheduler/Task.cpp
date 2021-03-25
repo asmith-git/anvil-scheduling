@@ -177,9 +177,15 @@ namespace asmith {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
+#if ANVIL_NO_EXECUTE_ON_WAIT
+		while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+#else
 		scheduler->Yield([this]()->bool {
 			return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
 		});
+#endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
