@@ -35,7 +35,7 @@
 namespace asmith {
 
 #if ANVIL_USE_NEST_COUNTER
-	static thread_local int32_t g_nest_counter = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
+	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
 #endif
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
@@ -191,7 +191,7 @@ namespace asmith {
 		bool will_yield;
 #if ANVIL_NO_EXECUTE_ON_WAIT
 		// Only call yield if Wait is called from inside of a Task
-		will_yield = g_nest_counter > 0;
+		will_yield = g_tasks_nested_on_this_thread > 0;
 #else
 		will_yield = true;
 #else
@@ -276,7 +276,7 @@ HANDLE_ERROR:
 
 	void Task::Execute() throw() {
 #if ANVIL_USE_NEST_COUNTER
-		++g_nest_counter; // Remember that Execute is being called
+		++g_tasks_nested_on_this_thread; // Remember that Execute is being called
 #endif
 
 		// Remember the scheduler for later
@@ -302,7 +302,7 @@ HANDLE_ERROR:
 #endif
 
 #if ANVIL_USE_NEST_COUNTER
-		--g_nest_counter; // Execute is no longer being called
+		--g_tasks_nested_on_this_thread; // Execute is no longer being called
 #endif
 
 		// Wake waiting threads
