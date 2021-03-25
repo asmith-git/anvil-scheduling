@@ -21,7 +21,7 @@ This allows programming of how the scheduler orders tasks that have equal priori
 If none of the optional extensions are enabled, then creating a custom Task is easy. All we need to do is override the OnExecution function with our custom behaviour.
 ```cpp
 // This task prints a message to std::cout, fairly simple
-class MyTask final : public asmith::Task {
+class MyTask final : public anvil::Task {
 private:
 	std::string _message;
 protected:
@@ -46,7 +46,7 @@ Now we have a task to run, we can look at how scheduling works.
 int main{
 
 	// First we need to create the task scheduler that will run tasks
-	asmith::ExampleSchedulerSingleThreaded scheduler;
+	anvil::ExampleSchedulerSingleThreaded scheduler;
 
 	{
 		// Now let's make some tasks
@@ -74,11 +74,11 @@ If we don't mind adding a small overhead to task execution then we can simplify 
 int main{
 
 	// First we need to create the task scheduler that will run tasks
-	asmith::ExampleSchedulerSingleThreaded scheduler;
+	anvil::ExampleSchedulerSingleThreaded scheduler;
 
 	{
 		// Use a more friendly name
-		typedef asmith::TaskFunctional<std::function<void()>> EasyTask;
+		typedef anvil::TaskFunctional<std::function<void()>> EasyTask;
 
 		// We can program the tasks to do anything we want now, but these ones will
 		// do the same thing as MyTask
