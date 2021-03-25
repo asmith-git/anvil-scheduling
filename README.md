@@ -28,6 +28,7 @@ public:
 };
 ```
 ### Scheduling Tasks
+Now we have a task to run, we can look at how scheduling works.
 ```cpp
 int main{
 
@@ -44,18 +45,19 @@ int main{
 		scheduler.Schedule(task2);
 
 		// We can do something else on the thread now
-    std::cout << "This is parallel with tasks" << std::endl;
+    		std::cout << "This is parallel with tasks" << std::endl;
 
 		// Now let's wait for the tasks to finish executing
 		task1.Wait();
 		task2.Wait();
     
-    std::cout << "All tasks complete" << std::endl;
+    		std::cout << "All tasks complete" << std::endl;
 	}
 }
 ```
 ### Simplifying The Code
 If we don't mind adding a small overhead to task execution then we can simplify it so that we don't need to write a whole class. We can instead use TaskFunctional to pass a std::function, lambda or a C function pointer into the scheduler.
+```cpp
 int main{
 
 	// First we need to create the task scheduler that will run tasks
@@ -74,12 +76,12 @@ int main{
 		scheduler.Schedule(task1);
 		scheduler.Schedule(task2);
     
-    std::cout << "This is parallel with tasks" << std::endl;
+    		std::cout << "This is parallel with tasks" << std::endl;
     
 		task1.Wait();
 		task2.Wait();
     
-    std::cout << "All tasks complete" << std::endl;
+    		std::cout << "All tasks complete" << std::endl;
 	}
 }
 ```
