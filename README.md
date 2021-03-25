@@ -14,6 +14,8 @@ Allows tasks to throw exceptions when executing, which will be caught and rethro
 Reduces the memory footprint of Task objects to around half the normal size.
 #### ANVIL_TASK_EXTENDED_PRIORITY
 This allows programming of how the scheduler orders tasks that have equal priority using the GetExtendedPriority() function.
+#### ANVIL_NO_EXECUTE_ON_WAIT
+Wait() will put the thread to sleep instead of calling Yield(). This should be used when you don't want tasks executing on a particular thread.
 
 
 ## Usage Examples
