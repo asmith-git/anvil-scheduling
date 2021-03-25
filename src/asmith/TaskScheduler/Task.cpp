@@ -25,7 +25,18 @@
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
 
+
+#if ANVIL_NO_EXECUTE_ON_WAIT
+	#define ANVIL_USE_NEST_COUNTER 1
+#else 
+	#define ANVIL_USE_NEST_COUNTER 0
+#endif
+
 namespace asmith {
+
+#if ANVIL_USE_NEST_COUNTER
+	static thread_local int32_t g_nest_counter = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
+#endif
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
@@ -177,14 +188,22 @@ namespace asmith {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
+		bool will_yield;
 #if ANVIL_NO_EXECUTE_ON_WAIT
-		while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
+		// Only call yield if Wait is called from inside of a Task
+		will_yield = g_nest_counter > 0;
 #else
-		scheduler->Yield([this]()->bool {
-			return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
-		});
+		will_yield = true;
+#else
+		if (will_yield) {
+			scheduler->Yield([this]()->bool {
+				return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
+			});
+		} else {
+			while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+		}
 #endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
@@ -256,6 +275,10 @@ HANDLE_ERROR:
 	}
 
 	void Task::Execute() throw() {
+#if ANVIL_USE_NEST_COUNTER
+		++g_nest_counter; // Remember that Execute is being called
+#endif
+
 		// Remember the scheduler for later
 		Scheduler* const scheduler = _GetScheduler();
 
@@ -276,6 +299,10 @@ HANDLE_ERROR:
 		_scheduler_index = -1;
 #else
 		_scheduler = nullptr;
+#endif
+
+#if ANVIL_USE_NEST_COUNTER
+		--g_nest_counter; // Execute is no longer being called
 #endif
 
 		// Wake waiting threads
