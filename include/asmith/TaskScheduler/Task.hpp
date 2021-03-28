@@ -243,6 +243,8 @@ namespace anvil {
 		}
 
 #if ANVIL_DEBUG_TASKS
+		void PrintDebugMessage(const char* message) const;
+
 		static void SetDebugStream(std::ostream&);
 #endif
 

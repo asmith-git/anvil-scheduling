@@ -79,6 +79,10 @@ namespace anvil {
 		}
 
 		void Schedule(Task& task, Priority priority);
+
+#if ANVIL_DEBUG_TASKS
+		void PrintDebugMessage(const char* message) const;
+#endif
 	};
 }
 
