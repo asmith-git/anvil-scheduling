@@ -94,7 +94,7 @@ namespace anvil {
 		void Execute() throw();
 
 #if ANVIL_DEBUG_TASKS
-		uint64_t _debug_timer;
+		float _debug_timer;
 #endif
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST

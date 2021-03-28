@@ -48,8 +48,9 @@ namespace anvil {
 	}
 #endif
 
-	static uint64_t GetDebugTime() {
-		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	static float GetDebugTime() {
+		static const uint64_t g_reference_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		return static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - g_reference_time) / 1000000.f;
 	}
 
 	static std::string GetShortTaskName(const Task* task) {
@@ -107,7 +108,7 @@ namespace anvil {
 		g_debug_stream->write(message.c_str(), message.size());
 	}
 #else
-	#define GetDebugTime() 0ull
+	#define GetDebugTime() 0.f
 	#define PrintDebugMessage(TASK, MESSAGE)
 #endif
 
@@ -196,7 +197,7 @@ namespace anvil {
 		OnBlock();
 #endif
 
-		const uint64_t debug_time = GetDebugTime();
+		const float debug_time = GetDebugTime();
 		PrintDebugMessage(this, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
 
 		_state = STATE_BLOCKED;
@@ -283,7 +284,7 @@ namespace anvil {
 		will_yield = true;
 #endif
 
-		const uint64_t time = GetDebugTime();
+		const float time = GetDebugTime();
 
 		if (will_yield) {
 			PrintDebugMessage(this, "Waiting on thread %thread% for Task %task% to complete execution");
@@ -371,7 +372,7 @@ HANDLE_ERROR:
 	}
 
 	void Task::Execute() throw() {
-		const uint64_t time = GetDebugTime();
+		const float time = GetDebugTime();
 		PrintDebugMessage(this, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
 #if ANVIL_DEBUG_TASKS
 		_debug_timer = time;
