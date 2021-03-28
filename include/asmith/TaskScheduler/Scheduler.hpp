@@ -47,13 +47,18 @@ namespace anvil {
 
 		Task* RemoveNextTaskFromQueue() throw();
 
-		std::condition_variable _task_queue_update;
+		/*!
+			\brief Called when a Task has been added or removed from the queue
+			\details Wakes up threads that were sleeping and performs some additional scheduling logic
+		*/
+		void TaskQueueNotify();
+
 
 #if ANVIL_TASK_DELAY_SCHEDULING
 		void CheckUnreadyTasks();
 #endif
-		void TaskQueueNotify(size_t count);
 	protected:
+		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
 
 		bool TryToExecuteTask() throw();

@@ -26,10 +26,32 @@ namespace anvil {
 
 	// ExampleThread
 
-	ExampleThread::ExampleThread(Scheduler& scheduler) :
-		_comm_flag(COMM_DISABLED),
+	ExampleThread::ExampleThread(ExampleScheduler& scheduler) :
+		_comm_flag(COMM_EXECUTE),
 		_scheduler(scheduler)
-	{}
+	{
+		_thread = std::thread(
+			[this]()->void {
+			while (true) {
+				switch (_comm_flag) {
+				case COMM_DISABLED:
+					{
+						std::unique_lock<std::mutex> lock(_scheduler._mutex);
+						_scheduler._task_queue_update.wait(lock);
+					}
+					break;
+				case COMM_EXECUTE:
+					// Execute tasks until the flag changes
+					_scheduler.Yield([this]()->bool { return _comm_flag != COMM_EXECUTE; });
+					break;
+				case COMM_EXIT:
+					// Exit from the function (terminate thread)
+					return;
+				}
+			}
+		}
+		);
+	}
 
 	ExampleThread::~ExampleThread() {
 		Stop();
@@ -37,32 +59,15 @@ namespace anvil {
 
 	bool ExampleThread::Start() {
 		if (_comm_flag != COMM_DISABLED) return false;
-		_thread = std::thread(
-			[this]()->void {
-				while (true) {
-					switch (_comm_flag) {
-					case COMM_DISABLED:
-						// Sleep for 33 milliseconds then check again
-						std::this_thread::sleep_for(std::chrono::milliseconds(33));
-						break;
-					case COMM_EXECUTE:
-						// Execute tasks until the flag changes
-						_scheduler.Yield([this]()->bool { return _comm_flag != COMM_EXECUTE; });
-						break;
-					case COMM_EXIT:
-						// Exit from the function (terminate thread)
-						return;
-					}
-				}
-			}
-		);
 		_comm_flag = COMM_EXECUTE;
+		_scheduler._task_queue_update.notify_all(); // Wake threads
 		return true;
 	}
 
 	bool ExampleThread::Stop() {
 		if (!_thread.joinable()) return false;
 		_comm_flag = COMM_EXIT;
+		_scheduler._task_queue_update.notify_all(); // Wake threads
 		_thread.join();
 		return true;
 	}
@@ -70,13 +75,25 @@ namespace anvil {
 	bool ExampleThread::Pause() {
 		if (!_thread.joinable()) return false;
 		_comm_flag = COMM_DISABLED;
+		// No reason to wake threads to tell them they need to sleep
 		return true;
 	}
 
 	bool ExampleThread::Resume() {
 		if (!_thread.joinable()) return false;
 		_comm_flag = COMM_EXECUTE;
+		_scheduler._task_queue_update.notify_all(); // Wake threads
 		return true;
+	}
+
+	// ExampleScheduler
+
+	ExampleScheduler::ExampleScheduler() {
+
+	}
+
+	ExampleScheduler::~ExampleScheduler() {
+
 	}
 
 	// ExampleSchedulerSingleThreaded

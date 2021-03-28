@@ -31,6 +31,8 @@
 
 namespace anvil {
 
+	class ExampleScheduler;
+
 	class ExampleThread {
 	private:
 		enum : uint32_t {
@@ -40,14 +42,14 @@ namespace anvil {
 		};
 		std::thread _thread;
 		std::atomic_uint32_t _comm_flag;
-		Scheduler& _scheduler;
+		ExampleScheduler& _scheduler;
 
 		ExampleThread(ExampleThread&&) = delete;
 		ExampleThread(const ExampleThread&) = delete;
 		ExampleThread& operator=(ExampleThread&&) = delete;
 		ExampleThread& operator=(const ExampleThread&) = delete;
 	public:
-		ExampleThread(Scheduler& scheduler);
+		ExampleThread(ExampleScheduler& scheduler);
 		~ExampleThread();
 
 		bool Start();
@@ -58,7 +60,15 @@ namespace anvil {
 
 	typedef Scheduler ExampleSchedulerUnthreaded;
 
-	class ExampleSchedulerSingleThreaded final : public Scheduler {
+	class ExampleScheduler : public Scheduler {
+	public:
+		friend ExampleThread; // Allow ExampleThread to access thread synchronisation helpers
+
+		ExampleScheduler();
+		virtual ~ExampleScheduler();
+	};
+
+	class ExampleSchedulerSingleThreaded : public ExampleScheduler {
 	private:
 		ExampleThread _thread;
 	public:
@@ -66,7 +76,7 @@ namespace anvil {
 		virtual ~ExampleSchedulerSingleThreaded();
 	};
 
-	class ExampleSchedulerMultiThreaded final : public Scheduler {
+	class ExampleSchedulerMultiThreaded final : public ExampleScheduler {
 	private:
 		std::vector<std::shared_ptr<ExampleThread>> _threads;
 	public:
