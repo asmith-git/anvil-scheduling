@@ -81,6 +81,7 @@ namespace anvil {
 	}
 
 	static void PrintDebugMessage(const Task* task, std::string message) {
+
 		// Task name
 		std::string short_name = GetShortTaskName(task);
 		std::string long_name = GetLongTaskName(task);
@@ -105,6 +106,8 @@ namespace anvil {
 		if (message.back() != '\n') message += '\n';
 
 		// Write the message
+		static std::mutex g_lock;
+		std::lock_guard<std::mutex> locl(g_lock);
 		g_debug_stream->write(message.c_str(), message.size());
 	}
 #else
