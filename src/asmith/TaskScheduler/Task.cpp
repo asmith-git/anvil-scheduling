@@ -588,28 +588,27 @@ HANDLE_ERROR:
 			// Lock the task queue so that other threads cannot access it
 			std::lock_guard<std::mutex> lock(_mutex);
 
+			while (task == nullptr) {
+				// Check again that another thread hasn't emptied the queue while locking
+				if (_task_queue.empty()) return false;
+
+				// Remove the task at the back of the queue
+				task = _task_queue.back();
+				_task_queue.pop_back();
+
 #if ANVIL_TASK_DELAY_SCHEDULING
-			// Move tasks that have become unable to execute to the innactive list
-			for (auto i = _task_queue.begin(); i != _task_queue.end(); ++i) {
-				Task& t = **i;
-				if (!t.IsReadyToExecute()) {
-					_task_queue.erase(i);
-					i = _task_queue.begin();
-					_unready_task_queue.push_back(&t);
+				if (!task->IsReadyToExecute()) {
+					// Add the task to the unready list
+					_unready_task_queue.push_back(task);
+					task = nullptr;
 					notify = true;
 #if ANVIL_DEBUG_TASKS
 					anvil::PrintDebugMessage(&t, this, "Task %task% has become unable to execute after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
 #endif
+					continue;
 				}
 			}
 #endif
-
-			// Check again that another thread hasn't emptied the queue while locking
-			if (_task_queue.empty()) return false;
-
-			// Remove the task at the back of the queue
-			task = _task_queue.back();
-			_task_queue.pop_back();
 		}
 
 		// If something has happened to the task queue then notify yielding tasks
