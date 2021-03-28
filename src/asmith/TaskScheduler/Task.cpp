@@ -168,7 +168,6 @@ namespace anvil {
 
 #else
 	#define GetDebugTime() 0.f
-	#define PrintDebugMessage(TASK, SCHEDULER, MESSAGE)
 #endif
 
 #if ANVIL_USE_NEST_COUNTER
@@ -239,11 +238,15 @@ namespace anvil {
 #endif
 		_state(STATE_INITIALISED)
 	{
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is created on thread %thread%");
+#endif
 	}
 
 	Task::~Task() {
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
+#endif
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
@@ -257,7 +260,9 @@ namespace anvil {
 #endif
 
 		const float debug_time = GetDebugTime();
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
+#endif
 
 		_state = STATE_BLOCKED;
 		try {
@@ -268,7 +273,9 @@ namespace anvil {
 		}
 		_state = STATE_EXECUTING;
 
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% resumed execution on thread %thread% after being paused for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
+#endif
 
 #if ANVIL_TASK_CALLBACKS
 		OnResume();
@@ -306,7 +313,9 @@ namespace anvil {
 			}
 #endif
 
+#if ANVIL_DEBUG_TASKS
 			anvil::PrintDebugMessage(this, nullptr, "Task %task% was canceled from thread %thread% after being scheduled for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+#endif
 
 #if ANVIL_TASK_CALLBACKS
 			// Call the cancelation callback
@@ -349,18 +358,24 @@ namespace anvil {
 		const float time = GetDebugTime();
 
 		if (will_yield) {
+#if ANVIL_DEBUG_TASKS
 			anvil::PrintDebugMessage(this, nullptr, "Waiting on thread %thread% for Task %task% to complete execution");
+#endif
 			scheduler->Yield([this]()->bool {
 				return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
 			});
 		} else {
+#if ANVIL_DEBUG_TASKS
 			anvil::PrintDebugMessage(this, nullptr, "Waiting on thread %thread% for Task %task% to complete execution without yielding");
+#endif
 			while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 		}
 
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Finished waiting on thread %thread% for Task %task% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
+#endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
@@ -401,7 +416,9 @@ namespace anvil {
 		}
 
 
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Priority of Task %task% was set to " + std::to_string(_priority) + " from thread %thread%");
+#endif
 
 		return;
 HANDLE_ERROR:
@@ -435,8 +452,8 @@ HANDLE_ERROR:
 
 	void Task::Execute() throw() {
 		const float time = GetDebugTime();
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
 #if ANVIL_DEBUG_TASKS
+		anvil::PrintDebugMessage(this, nullptr, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
 		_debug_timer = time;
 #endif
 
@@ -453,7 +470,9 @@ HANDLE_ERROR:
 			OnExecution();
 			_state = Task::STATE_COMPLETE;
 		} catch (...) {
+#if ANVIL_DEBUG_TASKS
 			anvil::PrintDebugMessage(this, nullptr, "Task %task% threw exception on thread %thread% after executing for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+#endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
@@ -472,7 +491,9 @@ HANDLE_ERROR:
 		--g_tasks_nested_on_this_thread; // Execute is no longer being called
 #endif
 
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
+#endif
 
 		// Wake waiting threads
 		if (scheduler) scheduler->TaskQueueNotify();
@@ -484,7 +505,9 @@ HANDLE_ERROR:
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		AddScheduler(*this);
 #endif
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been created on thread %thread%");
+#endif
 	}
 
 	Scheduler::~Scheduler() {
@@ -492,7 +515,9 @@ HANDLE_ERROR:
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		RemoveScheduler(*this);
 #endif
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been destroyed on thread %thread%");
+#endif
 	}
 
 #if ANVIL_TASK_DELAY_SCHEDULING
@@ -507,9 +532,11 @@ HANDLE_ERROR:
 			if (t.IsReadyToExecute()) {
 				_task_queue.push_back(&t);
 				++count;
-				anvil::PrintDebugMessage(&t, this, "Task %task% has become able to execute again after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
 				_unready_task_queue.erase(i);
 				i = _unready_task_queue.begin();
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&t, this, "Task %task% has become able to execute again after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
+#endif
 			}
 		}
 
@@ -520,7 +547,9 @@ HANDLE_ERROR:
 
 
 	void Scheduler::TaskQueueNotify() {
+#if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Task queue on Scheduler %scheduler% has been updated, waking all threads");
+#endif
 
 #if ANVIL_TASK_DELAY_SCHEDULING
 		// If the status of the task queue has changed then tasks may now be able to execute that couldn't before
@@ -566,7 +595,9 @@ HANDLE_ERROR:
 					i = _task_queue.begin();
 					_unready_task_queue.push_back(&t);
 					notify = true;
+#if ANVIL_DEBUG_TASKS
 					anvil::PrintDebugMessage(&t, this, "Task %task% has become unable to execute after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
+#endif
 				}
 			}
 #endif
@@ -606,14 +637,18 @@ HANDLE_ERROR:
 			// Try to execute a scheduled task
 			if (! TryToExecuteTask()) {
 				// If no task was able to be executed then block until there is a queue update
+#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
+#endif
 				std::unique_lock<std::mutex> lock(_mutex);
 				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 					_task_queue_update.wait(lock);
 				} else {
 					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 				}
+#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
+#endif
 			}
 		}
 	}
@@ -671,19 +706,23 @@ HANDLE_ERROR:
 			for (uint32_t i = 0u; i < count; ++i) {
 				Task& t = *tasks[i];
 
+#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(&t, nullptr, "Type of Task %task% is %task_class%");
 				anvil::PrintDebugMessage(&t, nullptr, "Task %task% is scheduled with Scheduler %scheduler% from thread %thread%");
-#if ANVIL_DEBUG_TASKS
 				t._debug_timer = GetDebugTime();
 #endif
 #if ANVIL_TASK_DELAY_SCHEDULING
 				// If the task isn't ready to execute yet push it to the innactive queue
 				if (!t.IsReadyToExecute()) {
+#if ANVIL_DEBUG_TASKS
 					anvil::PrintDebugMessage(&t, this, "Task %task% is not ready to execute yet");
+#endif
 					_unready_task_queue.push_back(&t);
 					continue;
 				}
+#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(&t, this, "Task %task% is ready to execute");
+#endif
 	
 				// Add to the active queue
 				++ready_count;
