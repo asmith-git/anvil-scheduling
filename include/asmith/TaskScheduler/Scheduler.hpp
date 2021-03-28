@@ -34,19 +34,27 @@ namespace anvil {
 
 	class Scheduler {
 	private:
-	private:
 		Scheduler(Scheduler&&) = delete;
 		Scheduler(const Scheduler&) = delete;
 		Scheduler& operator=(Scheduler&&) = delete;
 		Scheduler& operator=(const Scheduler&) = delete;
 
-		std::vector<Task*> _task_queue;
+#if ANVIL_TASK_DELAY_SCHEDULING
+		std::vector<Task*> _unready_task_queue; //!< Contains tasks that have been scheduled but are not yet ready to execute
+#endif
+		std::vector<Task*> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
 		void SortTaskQueue() throw();
 
 		Task* RemoveNextTaskFromQueue() throw();
+
+		std::condition_variable _task_queue_update;
+
+#if ANVIL_TASK_DELAY_SCHEDULING
+		void CheckUnreadyTasks();
+#endif
+		void TaskQueueNotify(size_t count);
 	protected:
 		std::mutex _mutex;
-		std::condition_variable _task_queue_update;
 
 		bool TryToExecuteTask() throw();
 	public:

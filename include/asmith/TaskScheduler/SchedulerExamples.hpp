@@ -25,6 +25,8 @@
 
 #include <atomic>
 #include <thread>
+#include <vector>
+#include <memory>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
 namespace anvil {
@@ -39,6 +41,11 @@ namespace anvil {
 		std::thread _thread;
 		std::atomic_uint32_t _comm_flag;
 		Scheduler& _scheduler;
+
+		ExampleThread(ExampleThread&&) = delete;
+		ExampleThread(const ExampleThread&) = delete;
+		ExampleThread& operator=(ExampleThread&&) = delete;
+		ExampleThread& operator=(const ExampleThread&) = delete;
 	public:
 		ExampleThread(Scheduler& scheduler);
 		~ExampleThread();
@@ -61,12 +68,10 @@ namespace anvil {
 
 	class ExampleSchedulerMultiThreaded final : public Scheduler {
 	private:
-		ExampleThread _threadA;
-		ExampleThread _threadB;
-		ExampleThread _threadC;
-		ExampleThread _threadD;
+		std::vector<std::shared_ptr<ExampleThread>> _threads;
 	public:
 		ExampleSchedulerMultiThreaded();
+		ExampleSchedulerMultiThreaded(size_t count);
 		virtual ~ExampleSchedulerMultiThreaded();
 	};
 }

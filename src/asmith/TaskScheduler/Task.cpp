@@ -269,7 +269,7 @@ namespace anvil {
 		}
 
 		// Notify anythign waiting for changes to the task queue
-		if (notify) scheduler->_task_queue_update.notify_all();
+		if (notify) scheduler->TaskQueueNotify(9999u); // Notify all
 
 		// Canceled successfully
 		return true;
@@ -416,7 +416,7 @@ HANDLE_ERROR:
 		PrintDebugMessage(this, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
 
 		// Wake waiting threads
-		if(scheduler) scheduler->_task_queue_update.notify_all();
+		if (scheduler) scheduler->TaskQueueNotify(9999u); // Notify all
 	}
 
 	// Scheduler
@@ -434,7 +434,62 @@ HANDLE_ERROR:
 #endif
 	}
 
+#if ANVIL_TASK_DELAY_SCHEDULING
+	void Scheduler::CheckUnreadyTasks() {
+		// _mutex must be locked before calling this function
+
+		size_t count = 0u;
+		for (auto i = _unready_task_queue.begin(); i != _unready_task_queue.end(); ++i) {
+			Task& t = **i;
+
+			// If the task is now ready then add it to the ready queue
+			if (t.IsReadyToExecute()) {
+				_task_queue.push_back(&t);
+				++count;
+				goto ERASE_TASK;
+
+			// If the task has been cancled
+			} else if(t._state != Task::STATE_SCHEDULED) {
+ERASE_TASK:
+				// Remove the task from the unready queue
+				_unready_task_queue.erase(i);
+				i = _unready_task_queue.begin();
+			}
+		}
+
+		// If the ready queue has been changed then make sure the tasks are in the correct order
+		if (count > 0u) SortTaskQueue();
+	}
+#endif
+
+
+	void Scheduler::TaskQueueNotify(size_t count) {
+#if ANVIL_TASK_DELAY_SCHEDULING
+		// If the status of the task queue has changed then tasks may now be able to execute that couldn't before
+		if(! _unready_task_queue.empty()) {
+			std::lock_guard<std::mutex> lock(_mutex);
+			CheckUnreadyTasks();
+		}
+#endif
+
+		if (count > 1u) {
+			_task_queue_update.notify_all();
+		} else {
+			_task_queue_update.notify_one();
+		}
+	}
+
 	Task* Scheduler::RemoveNextTaskFromQueue() throw() {
+
+#if ANVIL_TASK_DELAY_SCHEDULING
+		if (_task_queue.empty()) {
+			// If there are no active tasks, check if an innactive one has now become ready
+			if (_unready_task_queue.empty()) return false;
+
+			std::lock_guard<std::mutex> lock(_mutex);
+			CheckUnreadyTasks();
+		}
+#endif
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
 		if (_task_queue.empty()) return false;
@@ -445,45 +500,39 @@ HANDLE_ERROR:
 			// Lock the task queue so that other threads cannot access it
 			std::lock_guard<std::mutex> lock(_mutex);
 
-			// Check again that another thread hasn't emptied the queue while locking
-			if (_task_queue.empty()) return false;
-
-			{
-				// Remove tasks that have been canceled
-				auto i = _task_queue.begin();
-				auto end = _task_queue.end();
-				while (i != end) {
-					if ((**i)._state != Task::STATE_SCHEDULED) {
-						_task_queue.erase(i);
-						i = _task_queue.begin();
-						end = _task_queue.end();
-						notify = true;
-					}
-					++i;
+			// Remove tasks that have been canceled
+			for (auto i = _task_queue.begin(); i != _task_queue.end(); ++i) {
+				Task& t = **i;
+				if (t._state != Task::STATE_SCHEDULED) {
+					_task_queue.erase(i);
+					i = _task_queue.begin();
+					notify = true;
 				}
 			}
 
 #if ANVIL_TASK_DELAY_SCHEDULING
-			// Scan the queue backwards for a task that is ready to execute
-			auto i = _task_queue.rbegin();
-			auto end = _task_queue.rend();
-			while (i != end) {
-				if ((**i).IsReadyToExecute()) {
-					task = *i;
-					_task_queue.erase(std::next(i).base());
-					break;
+			// Move tasks that have become unable to execute to the innactive list
+			for (auto i = _task_queue.begin(); i != _task_queue.end(); ++i) {
+				Task& t = **i;
+				if (!t.IsReadyToExecute()) {
+					_task_queue.erase(i);
+					i = _task_queue.begin();
+					_unready_task_queue.push_back(&t);
+					notify = true;
 				}
-				++i;
 			}
-#else
+#endif
+
+			// Check again that another thread hasn't emptied the queue while locking
+			if (_task_queue.empty()) return false;
+
 			// Remove the task at the back of the queue
 			task = _task_queue.back();
 			_task_queue.pop_back();
-#endif
 		}
 
 		// If something has happened to the task queue then notify yielding tasks
-		if (notify) _task_queue_update.notify_all();
+		if (notify) TaskQueueNotify(9999u); // Notify all
 
 		// Return the task if one was found
 		return task;
@@ -568,18 +617,35 @@ HANDLE_ERROR:
 		}
 
 		// Add to task queue
+#if ANVIL_TASK_DELAY_SCHEDULING
+		size_t ready_count = 0u;
+#else
+		const uint32_t& ready_count = count;
+#endif
+
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			for (uint32_t i = 0u; i < count; ++i) {
-				_task_queue.push_back(tasks[i]);
+				Task& t = *tasks[i];
+#if ANVIL_TASK_DELAY_SCHEDULING
+				// If the task isn't ready to execute yet push it to the innactive queue
+				if (!t.IsReadyToExecute()) {
+					_unready_task_queue.push_back(&t);
+					continue;
+				}
+	
+				// Add to the active queue
+				++ready_count;
+#endif
+				_task_queue.push_back(&t);
 			}
 
 			// Sort task list by priority
-			SortTaskQueue();
+			if (ready_count > 0u) SortTaskQueue();
 		}
 
 		// Notify waiting threads
-		_task_queue_update.notify_all();
+		if (ready_count > 0u) TaskQueueNotify(ready_count);
 	}
 	
 	void Scheduler::Schedule(Task& task, Priority priority) {
