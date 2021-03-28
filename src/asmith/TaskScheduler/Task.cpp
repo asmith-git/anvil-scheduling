@@ -369,7 +369,9 @@ namespace anvil {
 			anvil::PrintDebugMessage(this, nullptr, "Waiting on thread %thread% for Task %task% to complete execution without yielding");
 #endif
 			while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				std::unique_lock<std::mutex> lock(scheduler->_mutex);
+				scheduler->_task_queue_update.wait_for(lock, std::chrono::milliseconds(10));
+
 			}
 		}
 
