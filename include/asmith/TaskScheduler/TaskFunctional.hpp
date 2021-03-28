@@ -175,18 +175,18 @@ namespace anvil {
 			\see TaskFunctional_Return
 			\see TaskFunctional_NoReturn
 		*/
-		template<class F>
+		template<class F, class ENABLE = void>
 		struct TaskFunctionalSelector {
 			typedef TaskFunctional_NoReturn<F> type;
 		};
 
 		template<class R>
-		struct TaskFunctionalSelector<std::function<R()>> {
+		struct TaskFunctionalSelector<std::function<R()>, typename std::enable_if<!std::is_same<R, void>::value>::type> {
 			typedef TaskFunctional_Return<R, std::function<R()>> type;
 		};
 
 		template<class R>
-		struct TaskFunctionalSelector<R(*)()> {
+		struct TaskFunctionalSelector<R(*)(), typename std::enable_if<!std::is_same<R, void>::value>::type> {
 			typedef TaskFunctional_Return<R, R(*)()> type;
 		};
 

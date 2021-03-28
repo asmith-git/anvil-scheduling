@@ -23,6 +23,9 @@
 #ifndef ANVIL_SCHEDULER_TASK_HPP
 #define ANVIL_SCHEDULER_TASK_HPP
 
+#if ANVIL_DEBUG_TASKS
+#include <iostream>
+#endif
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
@@ -89,6 +92,10 @@ namespace anvil {
 			\brief Calls Task::OnExecution() with proper state changes and exception handling
 		*/
 		void Execute() throw();
+
+#if ANVIL_DEBUG_TASKS
+		uint64_t _debug_timer;
+#endif
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		int8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
@@ -234,6 +241,10 @@ namespace anvil {
 			if (tmp == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
 			return *tmp;
 		}
+
+#if ANVIL_DEBUG_TASKS
+		static void SetDebugStream(std::ostream&);
+#endif
 
 	};
 	

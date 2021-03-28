@@ -20,11 +20,16 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+#if ANVIL_DEBUG_TASKS
+	#include <cctype>
+	#include <chrono>
+	#include <sstream>
+#endif
+#include <string>
 #include <algorithm>
 #include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
-
 
 #if ANVIL_NO_EXECUTE_ON_WAIT
 	#define ANVIL_USE_NEST_COUNTER 1
@@ -32,7 +37,79 @@
 	#define ANVIL_USE_NEST_COUNTER 0
 #endif
 
-namespace asmith {
+namespace anvil {
+
+#if ANVIL_DEBUG_TASKS
+	static std::ostream* g_debug_stream = &std::cout;
+
+#if ANVIL_DEBUG_TASKS
+	void Task::SetDebugStream(std::ostream& stream) {
+		g_debug_stream = &stream;
+	}
+#endif
+
+	static uint64_t GetDebugTime() {
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	}
+
+	static std::string GetShortTaskName(const Task* task) {
+		return std::to_string(reinterpret_cast<uintptr_t>(static_cast<const void*>(task)));
+	}
+
+	static std::string GetLongTaskName(const Task* task) {
+		std::string name = std::string(typeid(*task).name());
+
+		// Visual studio appends class to the start of the name, we dont need this
+		auto i = name.find("class ");
+		while (i != std::string::npos) {
+			name.erase(i, 6);
+			i = name.find("class ");
+		}
+
+		{
+			// Erase whitepace from name
+			for (auto j = name.begin(); j != name.end(); ++j) {
+				if (std::isspace(*j)) {
+					name.erase(j);
+					j = name.begin();
+				}
+			}
+		}
+
+		return name;
+	}
+
+	static void PrintDebugMessage(const Task* task, std::string message) {
+		// Task name
+		std::string short_name = GetShortTaskName(task);
+		std::string long_name = GetLongTaskName(task);
+		std::string thread = (std::ostringstream() << std::this_thread::get_id()).str();
+
+		// Replace task name
+		auto i = message.find("%task%");
+		if (i != std::string::npos) {
+			message.replace(i, 6, short_name);
+		}
+		i = message.find("%task_class%");
+		if (i != std::string::npos) {
+			message.replace(i, 12, long_name);
+		}
+		i = message.find("%thread%");
+		if (i != std::string::npos) {
+			message.replace(i, 8, thread);
+		}
+
+
+		// Append line break
+		if (message.back() != '\n') message += '\n';
+
+		// Write the message
+		g_debug_stream->write(message.c_str(), message.size());
+	}
+#else
+	#define GetDebugTime() 0ull
+	#define PrintDebugMessage(TASK, MESSAGE)
+#endif
 
 #if ANVIL_USE_NEST_COUNTER
 	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
@@ -101,9 +178,12 @@ namespace asmith {
 		_priority(PRIORITY_MIDDLE),
 #endif
 		_state(STATE_INITIALISED)
-	{}
+	{
+		PrintDebugMessage(this, "Task %task% is created on thread %thread%");
+	}
 
 	Task::~Task() {
+		PrintDebugMessage(this, "Task %task% is destroyed on thread %thread%");
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
@@ -116,6 +196,9 @@ namespace asmith {
 		OnBlock();
 #endif
 
+		const uint64_t debug_time = GetDebugTime();
+		PrintDebugMessage(this, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
+
 		_state = STATE_BLOCKED;
 		try {
 			_GetScheduler()->Yield(condition, max_sleep_milliseconds);
@@ -124,6 +207,8 @@ namespace asmith {
 			std::rethrow_exception(std::current_exception());
 		}
 		_state = STATE_EXECUTING;
+
+		PrintDebugMessage(this, "Task %task% resumed execution on thread %thread% after being paused for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
 
 #if ANVIL_TASK_CALLBACKS
 		OnResume();
@@ -157,6 +242,8 @@ namespace asmith {
 					++i;
 				}
 			}
+
+			PrintDebugMessage(this, "Task %task% was canceled from thread %thread% after being scheduled for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
 
 #if ANVIL_TASK_CALLBACKS
 			// Call the cancelation callback
@@ -194,17 +281,23 @@ namespace asmith {
 		will_yield = g_tasks_nested_on_this_thread > 0;
 #else
 		will_yield = true;
-#else
+#endif
+
+		const uint64_t time = GetDebugTime();
+
 		if (will_yield) {
+			PrintDebugMessage(this, "Waiting on thread %thread% for Task %task% to complete execution");
 			scheduler->Yield([this]()->bool {
 				return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
 			});
 		} else {
+			PrintDebugMessage(this, "Waiting on thread %thread% for Task %task% to complete execution without yielding");
 			while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 		}
-#endif
+
+		PrintDebugMessage(this, "Finished waiting on thread %thread% for Task %task% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
@@ -244,6 +337,9 @@ namespace asmith {
 			_priority = priority;
 		}
 
+
+		PrintDebugMessage(this, "Priority of Task %task% was set to " + std::to_string(_priority) + " from thread %thread%");
+
 		return;
 HANDLE_ERROR:
 		Cancel();
@@ -275,6 +371,12 @@ HANDLE_ERROR:
 	}
 
 	void Task::Execute() throw() {
+		const uint64_t time = GetDebugTime();
+		PrintDebugMessage(this, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
+#if ANVIL_DEBUG_TASKS
+		_debug_timer = time;
+#endif
+
 #if ANVIL_USE_NEST_COUNTER
 		++g_tasks_nested_on_this_thread; // Remember that Execute is being called
 #endif
@@ -288,6 +390,8 @@ HANDLE_ERROR:
 			OnExecution();
 			_state = Task::STATE_COMPLETE;
 		} catch (...) {
+			PrintDebugMessage(this, "Task %task% threw exception on thread %thread% after executing for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
@@ -304,6 +408,8 @@ HANDLE_ERROR:
 #if ANVIL_USE_NEST_COUNTER
 		--g_tasks_nested_on_this_thread; // Execute is no longer being called
 #endif
+
+		PrintDebugMessage(this, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
 
 		// Wake waiting threads
 		if(scheduler) scheduler->_task_queue_update.notify_all();
@@ -416,6 +522,7 @@ HANDLE_ERROR:
 	}
 
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
+
 		// Initial error checking
 		for (uint32_t i = 0u; i < count; ++i) {
 			if (tasks[i]->_state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
@@ -426,6 +533,8 @@ HANDLE_ERROR:
 			Task& t = *tasks[i];
 			t._state = Task::STATE_SCHEDULED;
 
+			PrintDebugMessage(&t, "Type of Task %task% is %task_class%");
+
 			// Initialise scheduling data
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 			t._scheduler_index = GetSchedulerIndex(*this);
@@ -434,6 +543,11 @@ HANDLE_ERROR:
 #endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
+#endif
+
+#if ANVIL_DEBUG_TASKS
+			PrintDebugMessage(&t, "Task %task% is scheduled from thread %thread%");
+			t._debug_timer = GetDebugTime();
 #endif
 
 #if ANVIL_TASK_CALLBACKS
