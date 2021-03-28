@@ -105,9 +105,11 @@ namespace anvil {
 			message.replace(i, 8, thread);
 		}
 
-
 		// Append line break
 		if (message.back() != '\n') message += '\n';
+
+		// Timestamp
+		message = std::to_string(GetDebugTime()) + "ms : " + message;
 
 		// Write the message
 		static std::mutex g_lock;
@@ -245,9 +247,9 @@ namespace anvil {
 				}
 			}
 #if ANVIL_TASK_DELAY_SCHEDULING
-			for (auto i = _unready_task_queue->_task_queue.begin(); i < _unready_task_queue->_task_queue.end(); ++i) {
+			for (auto i = scheduler->_unready_task_queue.begin(); i < scheduler->_unready_task_queue.end(); ++i) {
 				if (*i == this) {
-					_unready_task_queue->_task_queue.erase(i);
+					scheduler->_unready_task_queue.erase(i);
 					notify = true;
 					break;
 				}
@@ -453,7 +455,7 @@ HANDLE_ERROR:
 			if (t.IsReadyToExecute()) {
 				_task_queue.push_back(&t);
 				++count;
-				PrintDebugMessage(&t, "Task %task% has become able to execute");
+				PrintDebugMessage(&t, "Task %task% has become able to execute again after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
 				_unready_task_queue.erase(i);
 				i = _unready_task_queue.begin();
 			}
@@ -514,7 +516,7 @@ HANDLE_ERROR:
 					i = _task_queue.begin();
 					_unready_task_queue.push_back(&t);
 					notify = true;
-					PrintDebugMessage(&t, "Task %task% has become unable to execute");
+					PrintDebugMessage(&t, "Task %task% has become unable to execute after being scheduled for " + std::to_string(GetDebugTime() - t._debug_timer) + " milliseconds");
 				}
 			}
 #endif
@@ -582,8 +584,6 @@ HANDLE_ERROR:
 			Task& t = *tasks[i];
 			t._state = Task::STATE_SCHEDULED;
 
-			PrintDebugMessage(&t, "Type of Task %task% is %task_class%");
-
 			// Initialise scheduling data
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 			t._scheduler_index = GetSchedulerIndex(*this);
@@ -592,11 +592,6 @@ HANDLE_ERROR:
 #endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
-#endif
-
-#if ANVIL_DEBUG_TASKS
-			PrintDebugMessage(&t, "Task %task% is scheduled from thread %thread%");
-			t._debug_timer = GetDebugTime();
 #endif
 
 #if ANVIL_TASK_CALLBACKS
@@ -623,6 +618,12 @@ HANDLE_ERROR:
 			std::lock_guard<std::mutex> lock(_mutex);
 			for (uint32_t i = 0u; i < count; ++i) {
 				Task& t = *tasks[i];
+
+				PrintDebugMessage(&t, "Type of Task %task% is %task_class%");
+				PrintDebugMessage(&t, "Task %task% is scheduled from thread %thread%");
+#if ANVIL_DEBUG_TASKS
+				t._debug_timer = GetDebugTime();
+#endif
 #if ANVIL_TASK_DELAY_SCHEDULING
 				// If the task isn't ready to execute yet push it to the innactive queue
 				if (!t.IsReadyToExecute()) {
