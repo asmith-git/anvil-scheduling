@@ -39,6 +39,10 @@
 
 namespace anvil {
 
+	enum {
+		NOTIFY_ALL = UINT16_MAX
+	};
+
 #if ANVIL_DEBUG_TASKS
 	static std::ostream* g_debug_stream = &std::cout;
 
@@ -233,19 +237,22 @@ namespace anvil {
 			if (_state != STATE_SCHEDULED) return false;
 
 			// Remove the task from the queue
-			//! \bug If the task cannot be found then something has gone wrong, but the code doesnt check for this
-			{
-				auto i = scheduler->_task_queue.begin();
-				auto end = scheduler->_task_queue.end();
-				while (i != end) {
-					if (*i == this) {
-						scheduler->_task_queue.erase(i);
-						notify = true;
-						break;
-					}
-					++i;
+			for(auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
+				if (*i == this) {
+					scheduler->_task_queue.erase(i);
+					notify = true;
+					break;
 				}
 			}
+#if ANVIL_TASK_DELAY_SCHEDULING
+			for (auto i = _unready_task_queue->_task_queue.begin(); i < _unready_task_queue->_task_queue.end(); ++i) {
+				if (*i == this) {
+					_unready_task_queue->_task_queue.erase(i);
+					notify = true;
+					break;
+				}
+			}
+#endif
 
 			PrintDebugMessage(this, "Task %task% was canceled from thread %thread% after being scheduled for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
 
@@ -269,7 +276,7 @@ namespace anvil {
 		}
 
 		// Notify anythign waiting for changes to the task queue
-		if (notify) scheduler->TaskQueueNotify(9999u); // Notify all
+		if (notify) scheduler->TaskQueueNotify(NOTIFY_ALL);
 
 		// Canceled successfully
 		return true;
@@ -416,7 +423,7 @@ HANDLE_ERROR:
 		PrintDebugMessage(this, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
 
 		// Wake waiting threads
-		if (scheduler) scheduler->TaskQueueNotify(9999u); // Notify all
+		if (scheduler) scheduler->TaskQueueNotify(NOTIFY_ALL);
 	}
 
 	// Scheduler
@@ -446,12 +453,7 @@ HANDLE_ERROR:
 			if (t.IsReadyToExecute()) {
 				_task_queue.push_back(&t);
 				++count;
-				goto ERASE_TASK;
-
-			// If the task has been cancled
-			} else if(t._state != Task::STATE_SCHEDULED) {
-ERASE_TASK:
-				// Remove the task from the unready queue
+				PrintDebugMessage(&t, "Task %task% has become able to execute");
 				_unready_task_queue.erase(i);
 				i = _unready_task_queue.begin();
 			}
@@ -481,6 +483,8 @@ ERASE_TASK:
 
 	Task* Scheduler::RemoveNextTaskFromQueue() throw() {
 
+		// Check if there are tasks before locking the queue
+		// Avoids overhead of locking during periods of low activity
 #if ANVIL_TASK_DELAY_SCHEDULING
 		if (_task_queue.empty()) {
 			// If there are no active tasks, check if an innactive one has now become ready
@@ -488,27 +492,18 @@ ERASE_TASK:
 
 			std::lock_guard<std::mutex> lock(_mutex);
 			CheckUnreadyTasks();
+
+			if (_task_queue.empty()) return false;
 		}
-#endif
-		// Check if there are tasks before locking the queue
-		// Avoids overhead of locking during periods of low activity
+#else
 		if (_task_queue.empty()) return false;
+#endif
 
 		Task* task = nullptr;
 		bool notify = false;
 		{
 			// Lock the task queue so that other threads cannot access it
 			std::lock_guard<std::mutex> lock(_mutex);
-
-			// Remove tasks that have been canceled
-			for (auto i = _task_queue.begin(); i != _task_queue.end(); ++i) {
-				Task& t = **i;
-				if (t._state != Task::STATE_SCHEDULED) {
-					_task_queue.erase(i);
-					i = _task_queue.begin();
-					notify = true;
-				}
-			}
 
 #if ANVIL_TASK_DELAY_SCHEDULING
 			// Move tasks that have become unable to execute to the innactive list
@@ -519,6 +514,7 @@ ERASE_TASK:
 					i = _task_queue.begin();
 					_unready_task_queue.push_back(&t);
 					notify = true;
+					PrintDebugMessage(&t, "Task %task% has become unable to execute");
 				}
 			}
 #endif
@@ -532,7 +528,7 @@ ERASE_TASK:
 		}
 
 		// If something has happened to the task queue then notify yielding tasks
-		if (notify) TaskQueueNotify(9999u); // Notify all
+		if (notify) TaskQueueNotify(NOTIFY_ALL);
 
 		// Return the task if one was found
 		return task;
@@ -630,9 +626,11 @@ ERASE_TASK:
 #if ANVIL_TASK_DELAY_SCHEDULING
 				// If the task isn't ready to execute yet push it to the innactive queue
 				if (!t.IsReadyToExecute()) {
+					PrintDebugMessage(&t, "Task %task% is not ready to execute yet");
 					_unready_task_queue.push_back(&t);
 					continue;
 				}
+				PrintDebugMessage(&t, "Task %task% is ready to execute");
 	
 				// Add to the active queue
 				++ready_count;
