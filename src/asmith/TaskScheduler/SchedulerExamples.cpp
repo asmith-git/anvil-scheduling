@@ -94,21 +94,20 @@ namespace anvil {
 	// ExampleSchedulerMultiThreaded
 
 	ExampleSchedulerMultiThreaded::ExampleSchedulerMultiThreaded() :
-		_threadA(*this),
-		_threadB(*this),
-		_threadC(*this),
-		_threadD(*this)
-	{
-		_threadA.Start();
-		_threadB.Start();
-		_threadC.Start();
-		_threadD.Start();
+		ExampleSchedulerMultiThreaded(4u)
+	{}
+
+	ExampleSchedulerMultiThreaded::ExampleSchedulerMultiThreaded(size_t count) {
+		for (size_t i = 0u; i < count; ++i) {
+			std::shared_ptr<ExampleThread> thread(new ExampleThread(*this));
+			thread->Start();
+			_threads.push_back(thread);
+		}
 	}
 
 	ExampleSchedulerMultiThreaded::~ExampleSchedulerMultiThreaded() {
-		_threadA.Stop();
-		_threadB.Stop();
-		_threadC.Stop();
-		_threadD.Stop();
+		for (auto& thread : _threads) {
+			thread->Stop();
+		}
 	}
 }
