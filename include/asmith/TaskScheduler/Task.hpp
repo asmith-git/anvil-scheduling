@@ -80,7 +80,7 @@ namespace anvil {
 #endif
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		int8_t _scheduler_index;		//!< Remembers which scheduler this task is attached to, otherwise 0
+		uint8_t _scheduler;		//!< Remembers which scheduler this task is attached to, otherwise 255
 #else
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif

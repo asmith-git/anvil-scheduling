@@ -176,7 +176,10 @@ namespace anvil {
 
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
-	enum { MAX_SCHEDULERS = INT8_MAX };
+	enum { 
+		INVALID_SCHEDULER = UINT8_MAX,
+		MAX_SCHEDULERS = INVALID_SCHEDULER
+	};
 	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
 
 	namespace detail {
@@ -221,16 +224,14 @@ namespace anvil {
 		}
 		throw std::runtime_error("Could not find scheduler in global list");
 	}
+#else
+#define INVALID_SCHEDULER nullptr
 #endif
 
 	// Task
 
 	Task::Task() :
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		_scheduler_index(-1),
-#else
-		_scheduler(nullptr),
-#endif
+		_scheduler(INVALID_SCHEDULER),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
@@ -325,11 +326,7 @@ namespace anvil {
 #endif
 			// State change and cleanup
 			_state = Task::STATE_CANCELED;
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-			_scheduler_index = -1;
-#else
-			_scheduler = nullptr;
-#endif
+			_scheduler = INVALID_SCHEDULER;
 		}
 
 		// Notify anythign waiting for changes to the task queue
@@ -422,7 +419,7 @@ HANDLE_ERROR:
 	}
 
 	Task::Priority Task::GetPriority() const throw() {
-		return _priority;
+		return static_cast<Priority>(_priority);
 	}
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
@@ -433,8 +430,8 @@ HANDLE_ERROR:
 
 	Scheduler* Task::_GetScheduler() const throw() {
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		if (_scheduler_index < 0) return nullptr;
-		return g_scheduler_list[_scheduler_index];
+		if (_scheduler == INVALID_SCHEDULER) return nullptr;
+		return g_scheduler_list[_scheduler];
 #else
 		return _scheduler;
 #endif
@@ -471,11 +468,7 @@ HANDLE_ERROR:
 		}
 
 		// Post-execution cleanup
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		_scheduler_index = -1;
-#else
-		_scheduler = nullptr;
-#endif
+		_scheduler = INVALID_SCHEDULER;
 
 #if ANVIL_USE_NEST_COUNTER
 		--g_tasks_nested_on_this_thread; // Execute is no longer being called
@@ -662,10 +655,11 @@ HANDLE_ERROR:
 
 			// Initialise scheduling data
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-			t._scheduler_index = GetSchedulerIndex(*this);
+			t._scheduler = GetSchedulerIndex(*this);
 #else
 			t._scheduler = this;
 #endif
+
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
 #endif
