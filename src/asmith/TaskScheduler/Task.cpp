@@ -607,8 +607,8 @@ HANDLE_ERROR:
 #endif
 					continue;
 				}
-			}
 #endif
+			}
 		}
 
 		// If something has happened to the task queue then notify yielding tasks
