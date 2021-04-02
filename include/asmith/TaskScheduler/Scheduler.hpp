@@ -94,7 +94,7 @@ namespace anvil {
 		template<class T>
 		void Schedule(T* tasks, uint32_t count) {
 			// Allocate a small buffer in stack memory
-			enum { TASK_BLOCK = 128 };
+			enum { TASK_BLOCK = 1024 };
 			Task* tasks2[TASK_BLOCK];
 
 			// While there are tasks left to schedule
