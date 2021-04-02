@@ -65,14 +65,6 @@
 	#if ANVIL_TASK_EXTENDED_PRIORITY
 		#error ANVIL_TASK_EXTENDED_PRIORITY is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
 	#endif
-
-	#if ANVIL_TASK_HAS_EXCEPTIONS
-		#error ANVIL_TASK_HAS_EXCEPTIONS is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
-	#endif
-
-	#if ANVIL_DEBUG_TASKS
-		#error ANVIL_DEBUG_TASKS is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
-	#endif
 #endif
 
 // Early definition of the main classes in this library
