@@ -68,7 +68,7 @@ namespace anvil {
 		enum Priority : uint8_t {
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
 #if ANVIL_TASK_MEMORY_OPTIMISED
-			PRIORITY_HIGHEST = 64u,
+			PRIORITY_HIGHEST = 63u,
 #else
 			PRIORITY_HIGHEST = 255u,
 #endif	//!< The highest prority level supported by the Scheduler.

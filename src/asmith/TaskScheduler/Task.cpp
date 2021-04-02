@@ -222,7 +222,7 @@ namespace anvil {
 		throw std::runtime_error("Could not find scheduler in global list");
 	}
 #else
-#define INVALID_SCHEDULER nullptr
+	#define INVALID_SCHEDULER nullptr
 #endif
 
 	// Task

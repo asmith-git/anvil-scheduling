@@ -11,8 +11,8 @@ Adds the virtual functions OnScheduled(), OnBlock(), OnResume() and OnCancel() f
 #### ANVIL_TASK_HAS_EXCEPTIONS
 Allows tasks to throw exceptions when executing, which will be caught and rethrown by Wait()
 #### ANVIL_TASK_MEMORY_OPTIMISED
-Reduces the memory footprint of Task objects to around half the normal size.
-Incompatible with ANVIL_TASK_EXTENDED_PRIORITY
+Reduces the size of Task from 12 bytes to 8 bytes in 32-bit mode and from 24 bytes to 12 bytes in 64-bit mode (If no other extensions are enabled).
+Incompatible with ANVIL_TASK_EXTENDED_PRIORITY.
 #### ANVIL_TASK_EXTENDED_PRIORITY
 This allows programming of how the scheduler orders tasks that have equal priority using the GetExtendedPriority() function.
 #### ANVIL_NO_EXECUTE_ON_WAIT
