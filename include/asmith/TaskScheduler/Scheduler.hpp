@@ -84,12 +84,37 @@ namespace anvil {
 
 		void Schedule(Task** tasks, const uint32_t count);
 
+		void Schedule(Task& task, Priority priority);
+
 		inline void Schedule(Task& task) {
 			Task* t = &task;
 			Schedule(&t, 1u);
 		}
 
-		void Schedule(Task& task, Priority priority);
+		template<class T>
+		void Schedule(T* tasks, uint32_t count) {
+			// Allocate a small buffer in stack memory
+			enum { TASK_BLOCK = 128 };
+			Task* tasks2[TASK_BLOCK];
+
+			// While there are tasks left to schedule
+			while (count > 0u) {
+				// Add tasks to the buffer
+				uint32_t count2 = count;
+				if (count2 > TASK_BLOCK) count2 = TASK_BLOCK;
+				for (uint32_t i = 0u; i < count2; ++i) tasks2[i] = tasks + i;
+				count -= count2;
+				tasks += count2;
+
+				// Schedule the tasks
+				Schedule(tasks2, count2);
+			}
+		}
+
+		template<class T>
+		inline void Schedule(const std::vector<T>& tasks) {
+			Schedule(tasks.data(), static_cast<uint32_t>(tasks.size()));
+		}
 
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
