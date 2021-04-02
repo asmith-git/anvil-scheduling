@@ -25,18 +25,19 @@
 
 #include <cstdint>
 
-	// Check for invalid exension options
-#if ANVIL_TASK_MEMORY_OPTIMISED && ANVIL_TASK_EXTENDED_PRIORITY
-	#error ANVIL_TASK_EXTENDED_PRIORITY is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
+// Define default options
+
+#ifndef ANVIL_TASK_EXTENDED_PRIORITY
+	#define ANVIL_TASK_EXTENDED_PRIORITY 0
 #endif
 
-#if ANVIL_TASK_MEMORY_OPTIMISED
+#ifndef ANVIL_TASK_HAS_EXCEPTIONS
 	#define ANVIL_TASK_HAS_EXCEPTIONS 0
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 1
-#else
-	#define ANVIL_TASK_HAS_EXCEPTIONS 1
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 0
-#endif 
+#endif
+
+#ifndef ANVIL_TASK_MEMORY_OPTIMISED
+	#define ANVIL_TASK_MEMORY_OPTIMISED 0
+#endif
 
 #ifndef ANVIL_NO_EXECUTE_ON_WAIT
 	#define ANVIL_NO_EXECUTE_ON_WAIT 0
@@ -45,6 +46,36 @@
 #ifndef ANVIL_DEBUG_TASKS
 	#define ANVIL_DEBUG_TASKS 0
 #endif
+
+#ifndef ANVIL_TASK_DELAY_SCHEDULING
+	#define ANVIL_TASK_DELAY_SCHEDULING 0
+#endif
+
+// Define derived options
+
+#if ANVIL_TASK_MEMORY_OPTIMISED
+	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 1
+#else
+	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 0
+#endif 
+
+// Check for invalid exension options
+
+#if ANVIL_TASK_MEMORY_OPTIMISED
+	#if ANVIL_TASK_EXTENDED_PRIORITY
+		#error ANVIL_TASK_EXTENDED_PRIORITY is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
+	#endif
+
+	#if ANVIL_TASK_HAS_EXCEPTIONS
+		#error ANVIL_TASK_HAS_EXCEPTIONS is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
+	#endif
+
+	#if ANVIL_DEBUG_TASKS
+		#error ANVIL_DEBUG_TASKS is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
+	#endif
+#endif
+
+// Early definition of the main classes in this library
 
 namespace anvil {
 	class Task;

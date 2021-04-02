@@ -10,8 +10,9 @@ This adds the virtual IsReadyToExecute() function to Task, which will prevent a 
 Adds the virtual functions OnScheduled(), OnBlock(), OnResume() and OnCancel() functions to task. These are called when the state of the task is about to be changed, which is usefull for debugging or monitoring the status of the scheduler.
 #### ANVIL_TASK_HAS_EXCEPTIONS
 Allows tasks to throw exceptions when executing, which will be caught and rethrown by Wait()
-#### ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#### ANVIL_TASK_MEMORY_OPTIMISED
 Reduces the memory footprint of Task objects to around half the normal size.
+Incompatible with ANVIL_TASK_HAS_EXCEPTIONS, ANVIL_DEBUG_TASKS and ANVIL_TASK_EXTENDED_PRIORITY
 #### ANVIL_TASK_EXTENDED_PRIORITY
 This allows programming of how the scheduler orders tasks that have equal priority using the GetExtendedPriority() function.
 #### ANVIL_NO_EXECUTE_ON_WAIT
