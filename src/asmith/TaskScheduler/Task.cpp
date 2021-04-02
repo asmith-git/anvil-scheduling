@@ -340,31 +340,32 @@ namespace anvil {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
-		bool will_yield;
 #if ANVIL_NO_EXECUTE_ON_WAIT
-		// Only call yield if Wait is called from inside of a Task
-		will_yield = g_tasks_nested_on_this_thread > 0;
+		const bool will_yield =	g_tasks_nested_on_this_thread > 0; // Only call yield if Wait is called from inside of a Task
 #else
-		will_yield = true;
+		enum { will_yield = 1 }; // Always yield
 #endif
 
 		const float time = GetDebugTime();
 
-		if (will_yield) {
 #if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(this, nullptr, "Waiting on thread %thread% for Task %task% to complete execution");
+		anvil::PrintDebugMessage(this, nullptr, 
+			will_yield ?  "Waiting on thread %thread% for Task %task% to complete execution" :
+			"Waiting on thread %thread% for Task %task% to complete execution without yielding"
+		);
 #endif
+
+		#define YieldCondition() (_state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED)
+
+		if (will_yield) {
 			scheduler->Yield([this]()->bool {
-				return _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED;
+				return YieldCondition();
 			});
 		} else {
-#if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(this, nullptr, "Waiting on thread %thread% for Task %task% to complete execution without yielding");
-#endif
-			while (_state != Task::STATE_COMPLETE && _state != Task::STATE_CANCELED) {
+			while (! YieldCondition()) {
+				// Wait for 1ms then check again
 				std::unique_lock<std::mutex> lock(scheduler->_mutex);
-				scheduler->_task_queue_update.wait_for(lock, std::chrono::milliseconds(10));
-
+				scheduler->_task_queue_update.wait_for(lock, std::chrono::milliseconds(1));
 			}
 		}
 
@@ -678,14 +679,13 @@ HANDLE_ERROR:
 		}
 
 		// Add to task queue
-#if ANVIL_TASK_DELAY_SCHEDULING
 		size_t ready_count = 0u;
-#else
-		const uint32_t& ready_count = count;
-#endif
 
 		{
+			// Lock the task queue
 			std::lock_guard<std::mutex> lock(_mutex);
+
+			// For each task to be scheduled
 			for (uint32_t i = 0u; i < count; ++i) {
 				Task& t = *tasks[i];
 
@@ -697,19 +697,19 @@ HANDLE_ERROR:
 #if ANVIL_TASK_DELAY_SCHEDULING
 				// If the task isn't ready to execute yet push it to the innactive queue
 				if (!t.IsReadyToExecute()) {
-#if ANVIL_DEBUG_TASKS
+	#if ANVIL_DEBUG_TASKS
 					anvil::PrintDebugMessage(&t, this, "Task %task% is not ready to execute yet");
-#endif
+	#endif
 					_unready_task_queue.push_back(&t);
 					continue;
 				}
-#if ANVIL_DEBUG_TASKS
+	#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(&t, this, "Task %task% is ready to execute");
+	#endif
 #endif
-	
+
 				// Add to the active queue
 				++ready_count;
-#endif
 				_task_queue.push_back(&t);
 			}
 
