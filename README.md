@@ -14,7 +14,9 @@ Allows tasks to throw exceptions when executing, which will be caught and rethro
 Reduces the size of Task from 12 bytes to 8 bytes in 32-bit mode and from 24 bytes to 12 bytes in 64-bit mode (If no other extensions are enabled).
 Incompatible with ANVIL_TASK_EXTENDED_PRIORITY.
 #### ANVIL_TASK_EXTENDED_PRIORITY
-This allows programming of how the scheduler orders tasks that have equal priority using the GetExtendedPriority() function.
+Adds the GetExtendedPriority() function, which defines a 24-bit priority that controls the order in which tasks with the same priority will execute.
+#### ANVIL_TASK_EXTENDED_PRIORITY2
+Same as ANVIL_TASK_EXTENDED_PRIORITY, but the extended priority is 56-bit instead of 24-bit.
 #### ANVIL_NO_EXECUTE_ON_WAIT
 Wait() will put the thread to sleep instead of calling Yield(). This should be used when you don't want tasks executing on a particular thread.
 #### ANVIL_DEBUG_TASKS

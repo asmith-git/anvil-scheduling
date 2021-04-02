@@ -59,6 +59,16 @@ namespace anvil {
 		};
 
 		typedef Scheduler::Priority Priority;
+#if ANVIL_TASK_EXTENDED_PRIORITY2
+		typedef uint64_t ExtendedPriorityInteger;
+#else
+		typedef uint32_t ExtendedPriorityInteger;
+#endif
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		enum { EXTENDED_PRIORITY_BITS = (sizeof(ExtendedPriorityInteger) * 8u) - 8u };
+#else
+		enum { EXTENDED_PRIORITY_BITS = 0u };
+#endif
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
@@ -98,10 +108,10 @@ namespace anvil {
 	#if ANVIL_TASK_EXTENDED_PRIORITY
 		union ExtendedPriority {
 			struct {
-				uint32_t extended_priority : 24u;
-				uint32_t base_priority : 8u;
+				ExtendedPriorityInteger extended_priority : EXTENDED_PRIORITY_BITS;
+				ExtendedPriorityInteger base_priority : 8u;
 			};
-			uint32_t joint_priority;
+			ExtendedPriorityInteger joint_priority;
 
 			ExtendedPriority() : joint_priority(0u) {}
 			ExtendedPriority(Priority base_priority) : extended_priority(0u), base_priority(base_priority) {}
@@ -141,9 +151,9 @@ namespace anvil {
 			Tasks with higher extended priority execute before Tasks with lower extended priority.
 			Suggested uses are to run longer tasks first, or to delay tasks that share some external resource with another task that is running.
 			Called by Task::SetPriority()
-			\return The extended priority value, the lower 24-bits will be used.
+			\return The extended priority value, the lower 24 bits will be used, or the lower 56 bits if ANVIL_TASK_EXTENDED_PRIORITY2 is defined.
 		*/
-		virtual uint32_t GetExtendedPriority() const;
+		virtual ExtendedPriorityInteger GetExtendedPriority() const;
 #endif
 #if ANVIL_TASK_CALLBACKS
 		/*!

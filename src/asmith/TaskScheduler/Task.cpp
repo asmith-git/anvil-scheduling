@@ -420,7 +420,7 @@ HANDLE_ERROR:
 	}
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
-	uint32_t Task::GetExtendedPriority() const {
+	Task::ExtendedPriorityInteger Task::GetExtendedPriority() const {
 		return 0u;
 	}
 #endif 
