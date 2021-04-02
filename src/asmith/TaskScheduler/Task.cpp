@@ -165,9 +165,6 @@ namespace anvil {
 	void Scheduler::PrintDebugMessage(const char* message) const {
 		anvil::PrintDebugMessage(nullptr, this, message);
 	}
-
-#else
-	#define GetDebugTime() 0.f
 #endif
 
 #if ANVIL_USE_NEST_COUNTER
@@ -256,8 +253,8 @@ namespace anvil {
 		OnBlock();
 #endif
 
-		const float debug_time = GetDebugTime();
 #if ANVIL_DEBUG_TASKS
+		const float debug_time = GetDebugTime();
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
 #endif
 
@@ -346,9 +343,8 @@ namespace anvil {
 		enum { will_yield = 1 }; // Always yield
 #endif
 
-		const float time = GetDebugTime();
-
 #if ANVIL_DEBUG_TASKS
+		const float time = GetDebugTime();
 		anvil::PrintDebugMessage(this, nullptr, 
 			will_yield ?  "Waiting on thread %thread% for Task %task% to complete execution" :
 			"Waiting on thread %thread% for Task %task% to complete execution without yielding"
@@ -439,8 +435,8 @@ HANDLE_ERROR:
 	}
 
 	void Task::Execute() throw() {
-		const float time = GetDebugTime();
 #if ANVIL_DEBUG_TASKS
+		const float time = GetDebugTime();
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
 		_debug_timer = time;
 #endif
