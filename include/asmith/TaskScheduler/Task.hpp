@@ -58,25 +58,7 @@ namespace anvil {
 			STATE_CANCELED		//!< The task was canceled due to user request or an exception being thrown
 		};
 
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		typedef uint16_t Priority;	
-#else
-		typedef uint8_t Priority;
-#endif								//!< Defines the order in which Tasks are executed.
-
-		enum : Priority {
-			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
-#if ANVIL_TASK_MEMORY_OPTIMISED
-			PRIORITY_HIGHEST = 64u,
-#elif ANVIL_TASK_EXTENDED_PRIORITY
-			PRIORITY_HIGHEST = UINT16_MAX,
-#else
-			PRIORITY_HIGHEST = UINT8_MAX,								
-#endif	//!< The highest prority level supported by the Scheduler.
-			PRIORITY_MIDDLE = PRIORITY_HIGHEST / 2u,					//!< The default priority level.
-			PRIORITY_HIGH = PRIORITY_MIDDLE + (PRIORITY_MIDDLE / 2u),	//!< Halfway between PRIORITY_MIDDLE and PRIORITY_HIGHEST.
-			PRIORITY_LOW = PRIORITY_MIDDLE - (PRIORITY_MIDDLE / 2u)		//!< Halfway between PRIORITY_MIDDLE and PRIORITY_LOWEST.
-		};
+		typedef Scheduler::Priority Priority;
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
@@ -113,11 +95,26 @@ namespace anvil {
 			uint8_t _state : 4u;		//!< Stores the current state of the task
 		};
 #else
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		float _priority;				//!< Stores the scheduling priority of the task
-#else
+	#if ANVIL_TASK_EXTENDED_PRIORITY
+		union ExtendedPriority {
+			struct {
+				uint32_t extended_priority : 24u;
+				uint32_t base_priority : 8u;
+			};
+			uint32_t joint_priority;
+
+			ExtendedPriority() : joint_priority(0u) {}
+			ExtendedPriority(Priority base_priority) : extended_priority(0u), base_priority(base_priority) {}
+			inline operator Priority() const { return static_cast<Priority>(base_priority); }
+			inline bool operator<(const ExtendedPriority other) const { return joint_priority < other.joint_priority; }
+			inline bool operator<=(const ExtendedPriority other) const { return joint_priority <= other.joint_priority; }
+			inline bool operator>(const ExtendedPriority other) const { return joint_priority > other.joint_priority; }
+			inline bool operator>=(const ExtendedPriority other) const { return joint_priority >= other.joint_priority; }
+		};
+		ExtendedPriority _priority;		//!< Stores the scheduling priority of the task
+	#else
 		Priority _priority;				//!< Stores the scheduling priority of the task
-#endif
+	#endif	
 		State _state;					//!< Stores the current state of the task
 #endif
 	protected:
@@ -140,12 +137,13 @@ namespace anvil {
 #if ANVIL_TASK_EXTENDED_PRIORITY
 		/*!
 			\brief Return a user defined priority modifier.
-			\details Allows the user to have more control over the ordering of tasks with the same priority level.
+			\details This defines the order in which Tasks with the same priority will be executed.
+			Tasks with higher extended priority execute before Tasks with lower extended priority.
 			Suggested uses are to run longer tasks first, or to delay tasks that share some external resource with another task that is running.
 			Called by Task::SetPriority()
-			\return The priority modifer, can be any number be between 0 and 9999
+			\return The extended priority value, the lower 24-bits will be used.
 		*/
-		virtual float GetExtendedPriority() const;
+		virtual uint32_t GetExtendedPriority() const;
 #endif
 #if ANVIL_TASK_CALLBACKS
 		/*!

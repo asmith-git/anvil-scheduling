@@ -231,11 +231,7 @@ namespace anvil {
 #else
 		_scheduler(nullptr),
 #endif
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		_priority(static_cast<float>(PRIORITY_MIDDLE) * 10000.f),
-#else
-		_priority(PRIORITY_MIDDLE),
-#endif
+		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
 #if ANVIL_DEBUG_TASKS
@@ -391,30 +387,27 @@ namespace anvil {
 
 
 	void Task::SetPriority(const Priority priority) {
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		ExtendedPriority new_priority;
+		new_priority.base_priority = priority;
+		new_priority.extended_priority = GetExtendedPriority();
+#else
+		const Priority new_priority = priority;
+#endif
+
 		std::exception_ptr exception = nullptr;
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
-#if ANVIL_TASK_EXTENDED_PRIORITY
-				try {
-					_priority = GetExtendedPriority();
-					if (_priority > 9999.f) throw std::runtime_error("Task::SetPriority : Maximum priority modifier is 9999");
-				} catch (...) {
-					exception = std::current_exception();
-					goto HANDLE_ERROR;
-				}
-				_priority += static_cast<float>(priority) * 10000.f;
-#else
-				_priority = priority;
-#endif
+				_priority = new_priority;
 				scheduler->SortTaskQueue();
 			} else {
 				exception = std::make_exception_ptr(std::runtime_error("Priority of a task cannot be changed when executing"));
 				goto HANDLE_ERROR;
 			}
 		} else {
-			_priority = priority;
+			_priority = new_priority;
 		}
 
 
@@ -429,17 +422,12 @@ HANDLE_ERROR:
 	}
 
 	Task::Priority Task::GetPriority() const throw() {
-		//if (_scheduler == nullptr) throw std::runtime_error("Task is not attached to a scheduler");
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		return static_cast<Priority>(_priority / 10000.f);
-#else
 		return _priority;
-#endif
 	}
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
-	float Task::GetExtendedPriority() const {
-		return 0.f;
+	uint32_t Task::GetExtendedPriority() const {
+		return 0u;
 	}
 #endif 
 
