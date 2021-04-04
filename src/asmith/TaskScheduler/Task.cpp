@@ -510,8 +510,12 @@ HANDLE_ERROR:
 		// Remember the scheduler for later
 		Scheduler* const scheduler = _GetScheduler();
 
-		const auto CatchException = [this](std::exception_ptr exception, bool set_exception) {
+		const auto CatchException = [this](std::exception_ptr&& exception, bool set_exception) {
 			// Handle the exception
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			if (set_exception) this->_exception = std::move(exception);
+#endif
+
 #if ANVIL_DEBUG_TASKS
 			{
 				std::string message = "Task %task% threw exception ";
@@ -540,9 +544,6 @@ APPEND_TIME:
 				anvil::PrintDebugMessage(this, nullptr, message.c_str());
 			}
 #endif
-#if ANVIL_TASK_HAS_EXCEPTIONS
-			if(set_exception) _exception = std::current_exception();
-#endif
 			// If the exception was caught after the task finished execution
 			if (_state == STATE_COMPLETE || _state == STATE_CANCELED) {
 				// Do nothing
@@ -558,10 +559,13 @@ APPEND_TIME:
 				// Call the cancelation callback
 				try {
 					OnCancel();
-				} catch (...) {
+				} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+					anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 					// Task caught during execution takes priority as it probably has more useful debugging information
-					if (!set_exception) _exception = std::current_exception();
+					if (!set_exception) this->_exception = std::current_exception();
 #endif
 				}
 #endif
@@ -570,8 +574,11 @@ APPEND_TIME:
 
 		try {
 			g_thread_local_data.OnTaskExecuteBegin(*this);
-		} catch (...) {
-			CatchException(std::current_exception(), false);
+		} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+			anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+			CatchException(std::move(std::current_exception()), false);
 		}
 
 		// If an error hasn't been detected yet
@@ -582,14 +589,20 @@ APPEND_TIME:
 			try {
 				OnExecution();
 				_state = Task::STATE_COMPLETE;
-			} catch (...) {
-				CatchException(std::current_exception(), true);
+			} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+				CatchException(std::move(std::current_exception()), true);
 			}
 
 			try {
 				g_thread_local_data.OnTaskExecuteEnd(*this);
-			} catch (...) {
-				CatchException(std::current_exception(), false);
+			} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+				CatchException(std::move(std::current_exception()), false);
 			}
 		}
 
