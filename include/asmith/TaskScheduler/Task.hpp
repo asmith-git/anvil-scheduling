@@ -250,6 +250,24 @@ namespace anvil {
 			return *tmp;
 		}
 
+		/*!
+			\brief Return the Task that is currently executing on this thread.
+			\details Returns nullptr if there is no task executing on this thread.
+		*/
+		static Task* GetCurrentlyExecutingTask();
+
+		/*!
+			\brief Return a Task that is executing on this thread.
+			\param Index the index in the execution stack, 0u is the first Task that started executing.
+			\see GetNumberOfTasksExecutingOnThisThread()
+		*/
+		static Task* GetCurrentlyExecutingTask(size_t index);
+
+		/*!
+			\brief Return the number of Tasks that are currently executing on this thread.
+		*/
+		static size_t GetNumberOfTasksExecutingOnThisThread();
+
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
 

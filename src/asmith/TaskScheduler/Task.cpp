@@ -26,18 +26,76 @@
 	#include <sstream>
 #endif
 #include <string>
+#include <atomic>
 #include <algorithm>
 #include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
 
-#if ANVIL_NO_EXECUTE_ON_WAIT
-	#define ANVIL_USE_NEST_COUNTER 1
-#else 
-	#define ANVIL_USE_NEST_COUNTER 0
-#endif
-
 namespace anvil {
+
+	struct TaskThreadLocalData {
+		Task* task;
+	};
+
+	class _TaskThreadLocalData {
+	private:
+		enum { MAX_NESTED_TASKS = 256u };
+
+		std::atomic_uint32_t _counter;
+		TaskThreadLocalData _task_data[MAX_NESTED_TASKS];
+	public:
+
+		_TaskThreadLocalData() :
+			_counter(0u)
+		{}
+
+		inline void OnTaskExecuteBegin(Task& task) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			if (_counter >= MAX_NESTED_TASKS) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteBegin : Too many nested tasks");
+#endif
+			TaskThreadLocalData& data = _task_data[_counter++];
+			data.task = &task;
+		}
+
+		inline void OnTaskExecuteEnd(Task& task) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
+			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
+#endif
+			--_counter;
+		}
+
+		inline TaskThreadLocalData* GetCurrentExecutingTaskData() {
+			const uint32_t c = _counter;
+			return c == 0u ? nullptr : _task_data + (c - 1u);
+		}
+
+		TaskThreadLocalData* GetTaskData(Task& task) {
+			const uint32_t c = _counter;
+			for (uint32_t i = 0u; i < c; ++i) {
+				TaskThreadLocalData& data = _task_data[i];
+				if (data.task == &task) return &data;
+			}
+
+			return nullptr;
+		}
+
+		inline TaskThreadLocalData* GetTaskData(size_t index) {
+			if (_counter == 0u) return nullptr;
+			return _task_data + index;
+		}
+
+		inline uint32_t GetNumberOfTasks() const {
+			return _counter;
+		}
+	};
+
+	thread_local _TaskThreadLocalData g_thread_local_data;
+
+#if ANVIL_USE_NEST_COUNTER
+	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
+#endif
 
 #if ANVIL_DEBUG_TASKS
 	static std::ostream* g_debug_stream = &std::cout;
@@ -167,13 +225,9 @@ namespace anvil {
 	}
 #endif
 
-#if ANVIL_USE_NEST_COUNTER
-	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
-#endif
-
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 	static std::mutex g_scheduler_list_lock;
-	enum { 
+	enum {
 		INVALID_SCHEDULER = UINT8_MAX,
 		MAX_SCHEDULERS = INVALID_SCHEDULER
 	};
@@ -222,7 +276,7 @@ namespace anvil {
 		throw std::runtime_error("Could not find scheduler in global list");
 	}
 #else
-	#define INVALID_SCHEDULER nullptr
+#define INVALID_SCHEDULER nullptr
 #endif
 
 	// Task
@@ -242,6 +296,20 @@ namespace anvil {
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
 #endif
 		//! \bug If the task is scheduled it must be removed from the scheduler
+	}
+
+	Task* Task::GetCurrentlyExecutingTask() {
+		auto data = g_thread_local_data.GetCurrentExecutingTaskData();
+		return data == nullptr ? nullptr : data->task;
+	}
+
+	size_t Task::GetNumberOfTasksExecutingOnThisThread() {
+		return g_thread_local_data.GetNumberOfTasks();
+	}
+
+	Task* Task::GetCurrentlyExecutingTask(size_t index) {
+		auto data = g_thread_local_data.GetTaskData(index);
+		return data == nullptr ? nullptr : data->task;
 	}
 
 	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
@@ -337,8 +405,9 @@ namespace anvil {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
+		
 #if ANVIL_NO_EXECUTE_ON_WAIT
-		const bool will_yield =	g_tasks_nested_on_this_thread > 0; // Only call yield if Wait is called from inside of a Task
+		const bool will_yield = GetNumberOfTasksExecutingOnThisThread() > 0; // Only call yield if Wait is called from inside of a Task
 #else
 		enum { will_yield = 1 }; // Always yield
 #endif
@@ -441,9 +510,7 @@ HANDLE_ERROR:
 		_debug_timer = time;
 #endif
 
-#if ANVIL_USE_NEST_COUNTER
-		++g_tasks_nested_on_this_thread; // Remember that Execute is being called
-#endif
+		g_thread_local_data.OnTaskExecuteBegin(*this);
 
 		// Remember the scheduler for later
 		Scheduler* const scheduler = _GetScheduler();
@@ -467,9 +534,7 @@ HANDLE_ERROR:
 		// Post-execution cleanup
 		_scheduler = INVALID_SCHEDULER;
 
-#if ANVIL_USE_NEST_COUNTER
-		--g_tasks_nested_on_this_thread; // Execute is no longer being called
-#endif
+		g_thread_local_data.OnTaskExecuteEnd(*this);
 
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
