@@ -51,18 +51,13 @@ namespace anvil {
 		{}
 
 		inline void OnTaskExecuteBegin(Task& task) {
-#if ANVIL_TASK_HAS_EXCEPTIONS
-			if (_counter >= MAX_NESTED_TASKS) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteBegin : Too many nested tasks");
-#endif
 			TaskThreadLocalData& data = _task_data[_counter++];
 			data.task = &task;
 		}
 
 		inline void OnTaskExecuteEnd(Task& task) {
-#if ANVIL_TASK_HAS_EXCEPTIONS
 			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
 			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
-#endif
 			--_counter;
 		}
 
@@ -505,41 +500,77 @@ HANDLE_ERROR:
 
 	void Task::Execute() throw() {
 #if ANVIL_DEBUG_TASKS
-		const float time = GetDebugTime();
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
-		_debug_timer = time;
+		{
+			const float time = GetDebugTime();
+			anvil::PrintDebugMessage(this, nullptr, "Task %task% begins execution on thread %thread% after being scheduled for " + std::to_string(time - _debug_timer) + " milliseconds");
+			_debug_timer = time;
+		}
 #endif
-
-		g_thread_local_data.OnTaskExecuteBegin(*this);
-
 		// Remember the scheduler for later
 		Scheduler* const scheduler = _GetScheduler();
 
-		// Execute the task
-		_state = Task::STATE_EXECUTING;
-		try {
-			OnExecution();
-			_state = Task::STATE_COMPLETE;
-		} catch (...) {
+		const auto CatchException = [this](std::exception_ptr exception) {
+			// Handle the exception
 #if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(this, nullptr, "Task %task% threw exception on thread %thread% after executing for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+			anvil::PrintDebugMessage(this, nullptr, "Task %task% threw exception when starting execution on thread %thread% after executing for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
 #endif
-
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			_exception = std::current_exception();
 #endif
-			_state = Task::STATE_CANCELED;
+			// If the exception was caught after the task finished execution
+			if (_state == STATE_COMPLETE) {
+				// Do nothing
+
+			// If the exception was caught before or during execution
+			} else {			
+				// Cancel the Task
+				_state = Task::STATE_CANCELED;
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(this, nullptr, "Task %task% canceled due to an error");
+#endif
+#if ANVIL_TASK_CALLBACKS
+				// Call the cancelation callback
+				try {
+					OnCancel();
+				}
+				catch (...) {
+					// We have to ignore this exception because the one caught during execution is probably more usefull for debuging
+				}
+#endif
+			}
+		};
+
+		try {
+			g_thread_local_data.OnTaskExecuteBegin(*this);
+		} catch (...) {
+			CatchException(std::current_exception());
+		}
+
+		// If an error hasn't been detected yet
+		if (_state != Task::STATE_CANCELED) {
+
+			// Execute the task
+			_state = Task::STATE_EXECUTING;
+			try {
+				OnExecution();
+				_state = Task::STATE_COMPLETE;
+			} catch (...) {
+				CatchException(std::current_exception());
+			}
+
+			try {
+				g_thread_local_data.OnTaskExecuteEnd(*this);
+			} catch (...) {
+				CatchException(std::current_exception());
+			}
 		}
 
 		// Post-execution cleanup
 		_scheduler = INVALID_SCHEDULER;
 
-		g_thread_local_data.OnTaskExecuteEnd(*this);
-
 #if ANVIL_DEBUG_TASKS
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - time) + " milliseconds");
+		anvil::PrintDebugMessage(this, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
 #endif
-
 		// Wake waiting threads
 		if (scheduler) scheduler->TaskQueueNotify();
 	}
