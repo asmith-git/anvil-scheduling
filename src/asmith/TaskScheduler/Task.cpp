@@ -51,6 +51,7 @@ namespace anvil {
 		{}
 
 		inline void OnTaskExecuteBegin(Task& task) {
+			if (_counter >= MAX_NESTED_TASKS) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteBegin : Too many tasks are already executing on this thread");
 			TaskThreadLocalData& data = _task_data[_counter++];
 			data.task = &task;
 		}
@@ -509,16 +510,41 @@ HANDLE_ERROR:
 		// Remember the scheduler for later
 		Scheduler* const scheduler = _GetScheduler();
 
-		const auto CatchException = [this](std::exception_ptr exception) {
+		const auto CatchException = [this](std::exception_ptr exception, bool set_exception) {
 			// Handle the exception
 #if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(this, nullptr, "Task %task% threw exception when starting execution on thread %thread% after executing for " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+			{
+				std::string message = "Task %task% threw exception ";
+				switch (_state) {
+				case STATE_SCHEDULED:
+					message += "before starting execution";
+					break;
+				case STATE_EXECUTING:
+					message += "while executing for ";
+APPEND_TIME:
+					message += std::to_string(GetDebugTime() - _debug_timer) + " milliseconds";
+					break;
+				case STATE_COMPLETE:
+					message += "after completing execution, which lasted ";
+					goto APPEND_TIME;
+				case STATE_CANCELED:
+					message += "after being canceled";
+					break;
+				default:
+					message += "in an undefined state";
+					break;
+				};
+
+				message += " on thread %thread%";
+
+				anvil::PrintDebugMessage(this, nullptr, message.c_str());
+			}
 #endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
-			_exception = std::current_exception();
+			if(set_exception) _exception = std::current_exception();
 #endif
 			// If the exception was caught after the task finished execution
-			if (_state == STATE_COMPLETE) {
+			if (_state == STATE_COMPLETE || _state == STATE_CANCELED) {
 				// Do nothing
 
 			// If the exception was caught before or during execution
@@ -532,9 +558,11 @@ HANDLE_ERROR:
 				// Call the cancelation callback
 				try {
 					OnCancel();
-				}
-				catch (...) {
-					// We have to ignore this exception because the one caught during execution is probably more usefull for debuging
+				} catch (...) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+					// Task caught during execution takes priority as it probably has more useful debugging information
+					if (!set_exception) _exception = std::current_exception();
+#endif
 				}
 #endif
 			}
@@ -543,7 +571,7 @@ HANDLE_ERROR:
 		try {
 			g_thread_local_data.OnTaskExecuteBegin(*this);
 		} catch (...) {
-			CatchException(std::current_exception());
+			CatchException(std::current_exception(), false);
 		}
 
 		// If an error hasn't been detected yet
@@ -555,13 +583,13 @@ HANDLE_ERROR:
 				OnExecution();
 				_state = Task::STATE_COMPLETE;
 			} catch (...) {
-				CatchException(std::current_exception());
+				CatchException(std::current_exception(), true);
 			}
 
 			try {
 				g_thread_local_data.OnTaskExecuteEnd(*this);
 			} catch (...) {
-				CatchException(std::current_exception());
+				CatchException(std::current_exception(), false);
 			}
 		}
 
