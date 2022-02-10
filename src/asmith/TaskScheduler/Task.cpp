@@ -803,23 +803,28 @@ APPEND_TIME:
 	}
 
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
+#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+		const auto this_scheduler = GetSchedulerIndex(*this);
+#else
+		const auto this_scheduler = this;
+#endif
 
-		// Initial error checking
+		// Initial error checking and initialisation
 		for (uint32_t i = 0u; i < count; ++i) {
-			if (tasks[i]->_state != Task::STATE_INITIALISED) throw std::runtime_error("Task cannot be scheduled unless it is in STATE_INITIALISED");
-		}
-
-		for (uint32_t i = 0u; i < count; ++i) {
-			// Change state
 			Task& t = *tasks[i];
+
+			if (t._state != Task::STATE_INITIALISED) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&t, this, "Task (%task%) cannot be scheduled unless it is in STATE_INITIALISED");
+#endif
+				continue;
+			}
+
+			// Change state
 			t._state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-			t._scheduler = GetSchedulerIndex(*this);
-#else
-			t._scheduler = this;
-#endif
+			t._scheduler = this_scheduler;
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
@@ -830,15 +835,23 @@ APPEND_TIME:
 			try {
 				t.OnScheduled();
 			} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&t, this, std::string("Task (%task%) threw exception during OnScheduled (") + e.what());
+#endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 				t._exception = std::current_exception();
 #endif
 				t.Cancel();
+				continue;
 			} catch (...) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&t, this, "Task (%task%) threw non C++ exception value during OnScheduled");
+#endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 				t._exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
 #endif
 				t.Cancel();
+				continue;
 			}
 #endif
 		}
@@ -853,6 +866,9 @@ APPEND_TIME:
 			// For each task to be scheduled
 			for (uint32_t i = 0u; i < count; ++i) {
 				Task& t = *tasks[i];
+
+				// Skip the task if initalisation failed
+				if (t._scheduler != this_scheduler) continue;
 
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(&t, nullptr, "Type of Task %task% is %task_class%");
