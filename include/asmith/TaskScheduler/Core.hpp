@@ -51,6 +51,14 @@
 	#define ANVIL_DEBUG_TASKS 0
 #endif
 
+#ifndef ANVIL_TASK_PARENT
+	#if ANVIL_TASK_MEMORY_OPTIMISED
+		#define ANVIL_TASK_PARENT 0
+	#else
+		#define ANVIL_TASK_PARENT 1
+	#endif
+#endif
+
 #ifndef ANVIL_TASK_DELAY_SCHEDULING
 	#define ANVIL_TASK_DELAY_SCHEDULING 0
 #endif

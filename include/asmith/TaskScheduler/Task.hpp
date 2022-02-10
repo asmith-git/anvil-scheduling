@@ -95,6 +95,10 @@ namespace anvil {
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
 
+#if ANVIL_TASK_PARENT
+		Task* _parent;
+#endif
+
 #if ANVIL_TASK_HAS_EXCEPTIONS
 	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
@@ -239,6 +243,11 @@ namespace anvil {
 			\return The current priority of the Task.
 		*/
 		Priority GetPriority() const throw();
+
+		/*!
+			\return The parent of this task or null if there is no known parent
+		*/
+		Task* GetParent() const throw();
 
 		/*!
 			\details Will thrown an exception if no scheduler is attached to this Task.

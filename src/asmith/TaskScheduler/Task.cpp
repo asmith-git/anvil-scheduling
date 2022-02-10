@@ -279,6 +279,9 @@ namespace anvil {
 
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
+#if ANVIL_TASK_PARENT
+		_parent(nullptr),
+#endif
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
@@ -640,6 +643,14 @@ APPEND_TIME:
 		if (scheduler) scheduler->TaskQueueNotify();
 	}
 
+	Task* Task::GetParent() const throw() {
+#if ANVIL_TASK_PARENT
+		return _parent;
+#else
+		return nullptr;
+#endif
+	}
+
 	// Scheduler
 
 	Scheduler::Scheduler() :
@@ -812,6 +823,11 @@ APPEND_TIME:
 		const auto this_scheduler = this;
 #endif
 
+#if ANVIL_TASK_PARENT
+		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
+		Task* const parent = parent_local->task ? parent_local->task : nullptr;
+#endif
+
 		// Initial error checking and initialisation
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
@@ -831,6 +847,10 @@ APPEND_TIME:
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
+#endif
+
+#if ANVIL_TASK_PARENT
+			t._parent = parent;
 #endif
 
 #if ANVIL_TASK_CALLBACKS
