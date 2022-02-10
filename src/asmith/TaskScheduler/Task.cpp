@@ -325,10 +325,14 @@ namespace anvil {
 		_state = STATE_BLOCKED;
 		try {
 			_GetScheduler()->Yield(condition, max_sleep_milliseconds);
-		} catch (...) {
+		} catch (std::exception& e) {
 			_state = STATE_EXECUTING;
 			std::rethrow_exception(std::current_exception());
+		} catch (...) {
+			_state = STATE_EXECUTING;
+			throw std::runtime_error("Thrown value was not a C++ exception");
 		}
+		
 		_state = STATE_EXECUTING;
 
 #if ANVIL_DEBUG_TASKS
@@ -379,11 +383,16 @@ namespace anvil {
 			// Call the cancelation callback
 			try {
 				OnCancel();
-			} catch (...) {
+			} catch (std::exception& e) {
 #if ANVIL_TASK_HAS_EXCEPTIONS
 				_exception = std::current_exception();
 #endif
+			} catch (...) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+				_exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
+#endif
 			}
+			
 #endif
 			// State change and cleanup
 			_state = Task::STATE_CANCELED;
@@ -566,6 +575,14 @@ APPEND_TIME:
 #if ANVIL_TASK_HAS_EXCEPTIONS
 					// Task caught during execution takes priority as it probably has more useful debugging information
 					if (!set_exception) this->_exception = std::current_exception();
+#endif
+				} catch (...) {
+#if ANVIL_DEBUG_TASKS
+					anvil::PrintDebugMessage(this, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+#if ANVIL_TASK_HAS_EXCEPTIONS
+					// Task caught during execution takes priority as it probably has more useful debugging information
+					if (!set_exception) this->_exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
 #endif
 				}
 #endif
@@ -812,9 +829,14 @@ APPEND_TIME:
 			// Task callback
 			try {
 				t.OnScheduled();
-			} catch (...) {
+			} catch (std::exception& e) {
 #if ANVIL_TASK_HAS_EXCEPTIONS
 				t._exception = std::current_exception();
+#endif
+				t.Cancel();
+			} catch (...) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+				t._exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
 #endif
 				t.Cancel();
 			}
