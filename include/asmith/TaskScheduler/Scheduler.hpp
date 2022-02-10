@@ -65,13 +65,18 @@ namespace anvil {
 		bool TryToExecuteTask() throw();
 	public:
 		friend Task;
-
+#if ANVIL_TASK_EXTENDED_PRIORITY2
+		enum Priority : uint64_t {
+#elif ANVIL_TASK_EXTENDED_PRIORITY
+		enum Priority : uint32_t {
+#else
 		enum Priority : uint8_t {
+#endif
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
 #if ANVIL_TASK_MEMORY_OPTIMISED
 			PRIORITY_HIGHEST = 63u,
 #else
-			PRIORITY_HIGHEST = 255u,
+			PRIORITY_HIGHEST = (1 << (sizeof(Priority) * 8)) - 1,
 #endif	//!< The highest prority level supported by the Scheduler.
 			PRIORITY_MIDDLE = PRIORITY_HIGHEST / 2u,					//!< The default priority level.
 			PRIORITY_HIGH = PRIORITY_MIDDLE + (PRIORITY_MIDDLE / 2u),	//!< Halfway between PRIORITY_MIDDLE and PRIORITY_HIGHEST.

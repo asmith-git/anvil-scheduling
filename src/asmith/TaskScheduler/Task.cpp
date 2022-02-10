@@ -454,33 +454,23 @@ namespace anvil {
 	}
 
 
-	void Task::SetPriority(const Priority priority) {
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		ExtendedPriority new_priority;
-		new_priority.base_priority = priority;
-		new_priority.extended_priority = GetExtendedPriority();
-#else
-		const Priority new_priority = priority;
-#endif
+	void Task::SetPriority(Priority priority) {
 
-#if ANVIL_TASK_EXTENDED_PRIORITY
-		// Prioritise child tasks
-		new_priority.extended_priority += GetNestingDepth();
-#endif
+		if constexpr(Priority::PRIORITY_HIGHEST > 255u) priority = static_cast<Priority>(priority +GetNestingDepth());
 
 		std::exception_ptr exception = nullptr;
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
 			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
-				_priority = new_priority;
+				_priority = priority;
 				scheduler->SortTaskQueue();
 			} else {
 				exception = std::make_exception_ptr(std::runtime_error("Priority of a task cannot be changed when executing"));
 				goto HANDLE_ERROR;
 			}
 		} else {
-			_priority = new_priority;
+			_priority = priority;
 		}
 
 
@@ -497,12 +487,6 @@ HANDLE_ERROR:
 	Task::Priority Task::GetPriority() const throw() {
 		return static_cast<Priority>(_priority);
 	}
-
-#if ANVIL_TASK_EXTENDED_PRIORITY
-	Task::ExtendedPriorityInteger Task::GetExtendedPriority() const {
-		return 0u;
-	}
-#endif 
 
 	Scheduler* Task::_GetScheduler() const throw() {
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
@@ -835,7 +819,7 @@ APPEND_TIME:
 
 #if ANVIL_TASK_PARENT
 		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
-		Task* const parent = parent_local->task ? parent_local->task : nullptr;
+		Task* const parent = parent_local ? parent_local->task : nullptr;
 #endif
 
 		// Initial error checking and initialisation
