@@ -594,6 +594,11 @@ APPEND_TIME:
 				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
 #endif
 				CatchException(std::move(std::current_exception()), true);
+			} catch (...) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(this, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+				CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
 			}
 
 			try {
@@ -603,6 +608,11 @@ APPEND_TIME:
 				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
 #endif
 				CatchException(std::move(std::current_exception()), false);
+			} catch (...) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(this, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+				CatchException(std::exception_ptr(), false);
 			}
 		}
 
