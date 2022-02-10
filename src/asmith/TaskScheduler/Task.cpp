@@ -414,8 +414,8 @@ namespace anvil {
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
 		const bool will_yield = scheduler->_no_execution_on_wait ?
-			GetNumberOfTasksExecutingOnThisThread() > 0 :			// Only call yield if Wait is called from inside of a Task
-			true;													// Always yield
+			GetParent() != nullptr || GetNumberOfTasksExecutingOnThisThread() > 0 :	// Only call yield if Wait is called from inside of a Task
+			true;																	// Always yield
 
 #if ANVIL_DEBUG_TASKS
 		const float time = GetDebugTime();
@@ -461,6 +461,11 @@ namespace anvil {
 		new_priority.extended_priority = GetExtendedPriority();
 #else
 		const Priority new_priority = priority;
+#endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		// Prioritise child tasks
+		new_priority.extended_priority += GetNestingDepth();
 #endif
 
 		std::exception_ptr exception = nullptr;
@@ -649,6 +654,11 @@ APPEND_TIME:
 #else
 		return nullptr;
 #endif
+	}
+
+	size_t Task::GetNestingDepth() const throw() {
+		const Task* const p = GetParent();
+		return p ? p->GetNestingDepth() + 1u : 0u;
 	}
 
 	// Scheduler
