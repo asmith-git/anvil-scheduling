@@ -74,9 +74,9 @@ namespace anvil {
 #endif
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
 #if ANVIL_TASK_MEMORY_OPTIMISED
-			PRIORITY_HIGHEST = 63u,
+			PRIORITY_HIGHEST = (1 << 6) - 1,
 #else
-			PRIORITY_HIGHEST = (1 << (sizeof(Priority) * 8)) - 1,
+			PRIORITY_HIGHEST = (1ull << (sizeof(Priority) * 8ull)) - 1ull,
 #endif	//!< The highest prority level supported by the Scheduler.
 			PRIORITY_MIDDLE = PRIORITY_HIGHEST / 2u,					//!< The default priority level.
 			PRIORITY_HIGH = PRIORITY_MIDDLE + (PRIORITY_MIDDLE / 2u),	//!< Halfway between PRIORITY_MIDDLE and PRIORITY_HIGHEST.

@@ -57,8 +57,10 @@ namespace anvil {
 		}
 
 		inline void OnTaskExecuteEnd(Task& task) {
+#if ANVIL_DEBUG_TASKS
 			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
 			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
+#endif
 			--_counter;
 		}
 
@@ -279,8 +281,8 @@ namespace anvil {
 
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
-#if ANVIL_TASK_PARENT
-		_parent(nullptr),
+#if ANVIL_TASK_RUNTIME_DATA
+		_runtime_data(nullptr),
 #endif
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
@@ -293,6 +295,12 @@ namespace anvil {
 	Task::~Task() {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
+#endif
+#if ANVIL_TASK_RUNTIME_DATA
+		if (_runtime_data) {
+			delete _runtime_data;
+			_runtime_data = nullptr;
+		}
 #endif
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
@@ -634,10 +642,23 @@ APPEND_TIME:
 
 	Task* Task::GetParent() const throw() {
 #if ANVIL_TASK_PARENT
-		return _parent;
-#else
-		return nullptr;
+		if(_runtime_data) return _runtime_data->parent;
 #endif
+		return nullptr;
+	}
+
+	size_t Task::GetChildCount() const throw() {
+#if ANVIL_TASK_PARENT
+		if (_runtime_data) return _runtime_data->children.size();
+#endif
+		return 0u;
+
+	}
+	Task* Task::GetChild(size_t i) const throw() {
+#if ANVIL_TASK_PARENT
+		if (_runtime_data) if (i < _runtime_data->children.size()) _runtime_data->children.data()[i];
+#endif
+		return nullptr;
 	}
 
 	size_t Task::GetNestingDepth() const throw() {
@@ -843,8 +864,13 @@ APPEND_TIME:
 			t._exception = std::exception_ptr();
 #endif
 
+#if ANVIL_TASK_RUNTIME_DATA
+			t._runtime_data = new Task::RuntimeData(); //! Optimise allocation
+#endif
+
 #if ANVIL_TASK_PARENT
-			t._parent = parent;
+			t._runtime_data->parent = parent;
+			parent->_runtime_data->children.push_back(&t);
 #endif
 
 #if ANVIL_TASK_CALLBACKS

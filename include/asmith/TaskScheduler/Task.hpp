@@ -29,6 +29,8 @@
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
+#define ANVIL_TASK_RUNTIME_DATA ANVIL_TASK_PARENT
+
 namespace anvil {
 
 	/*!
@@ -65,6 +67,15 @@ namespace anvil {
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete;
 
+#if ANVIL_TASK_RUNTIME_DATA
+		struct RuntimeData {
+#if ANVIL_TASK_PARENT
+			Task* parent;
+			std::vector<Task*> children;
+#endif
+		}; //!< Data needed while a task is executing
+#endif
+
 		/*!
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
@@ -85,8 +96,8 @@ namespace anvil {
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
 
-#if ANVIL_TASK_PARENT
-		Task* _parent;
+#if ANVIL_TASK_RUNTIME_DATA
+		RuntimeData* _runtime_data;
 #endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
@@ -208,6 +219,16 @@ namespace anvil {
 			\return The parent of this task or null if there is no known parent
 		*/
 		Task* GetParent() const throw();
+
+		/*!
+			\return The number of child tasks
+		*/
+		size_t GetChildCount() const throw();
+
+		/*!
+			\return The a child of this task or null if there is no known child
+		*/
+		Task* GetChild(size_t i) const throw();
 
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)
