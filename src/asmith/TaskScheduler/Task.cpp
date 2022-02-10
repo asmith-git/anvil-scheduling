@@ -870,7 +870,7 @@ APPEND_TIME:
 
 #if ANVIL_TASK_PARENT
 			t._runtime_data->parent = parent;
-			parent->_runtime_data->children.push_back(&t);
+			if(parent) parent->_runtime_data->children.push_back(&t);
 #endif
 
 #if ANVIL_TASK_CALLBACKS
