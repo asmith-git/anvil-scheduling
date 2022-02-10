@@ -410,12 +410,9 @@ namespace anvil {
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
-		
-#if ANVIL_NO_EXECUTE_ON_WAIT
-		const bool will_yield = GetNumberOfTasksExecutingOnThisThread() > 0; // Only call yield if Wait is called from inside of a Task
-#else
-		enum { will_yield = 1 }; // Always yield
-#endif
+		const bool will_yield = scheduler->_no_execution_on_wait ?
+			GetNumberOfTasksExecutingOnThisThread() > 0 :			// Only call yield if Wait is called from inside of a Task
+			true;													// Always yield
 
 #if ANVIL_DEBUG_TASKS
 		const float time = GetDebugTime();
@@ -645,7 +642,13 @@ APPEND_TIME:
 
 	// Scheduler
 
-	Scheduler::Scheduler() {
+	Scheduler::Scheduler() :
+#if ANVIL_NO_EXECUTE_ON_WAIT
+		_no_execution_on_wait(true)
+#else
+		_no_execution_on_wait(false)
+#endif
+	{
 #if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
 		AddScheduler(*this);
 #endif

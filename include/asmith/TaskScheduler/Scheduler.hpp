@@ -60,6 +60,7 @@ namespace anvil {
 	protected:
 		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
+		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
 	public:
@@ -114,6 +115,10 @@ namespace anvil {
 		template<class T>
 		inline void Schedule(const std::vector<T>& tasks) {
 			Schedule(tasks.data(), static_cast<uint32_t>(tasks.size()));
+		}
+
+		inline void SetExecutionOnTaskWait(bool execute) {
+			_no_execution_on_wait = execute;
 		}
 
 #if ANVIL_DEBUG_TASKS
