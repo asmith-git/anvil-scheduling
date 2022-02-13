@@ -36,12 +36,11 @@ namespace anvil {
 
 	struct TaskThreadLocalData {
 		Task* task;
-		std::function<bool(void)> yield_condition;
-		bool yielding;
+		const std::function<bool(void)>* yield_condition;
 
 		TaskThreadLocalData() :
 			task(nullptr),
-			yielding(false)
+			yield_condition(nullptr)
 		{}
 	};
 
@@ -81,7 +80,7 @@ namespace anvil {
 				_threads_for_destruction.pop_back();
 			}
 
-			if ((! task.yielding) || task.yield_condition()) { //! \todo Check if the task is able to execute
+			if (task.yield_condition == nullptr || (*task.yield_condition)()) { //! \todo Check if the task is able to execute
 				_current_task = &task;
 				SwitchToFiber(task.task->_fiber);
 				return true;
@@ -996,8 +995,7 @@ APPEND_TIME:
 		// If this function is being called by a task
 		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
 		if (data) {
-			data->yielding = true;
-			data->yield_condition = condition;
+			data->yield_condition = &condition;
 		}
 
 		// While the condition is not met
@@ -1021,10 +1019,7 @@ APPEND_TIME:
 		}
 
 		// If this function is being called by a task
-		if (data) {
-			data->yielding = false;
-			data->yield_condition = []()->bool { return true; };
-		}
+		if (data) data->yield_condition = nullptr;
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
