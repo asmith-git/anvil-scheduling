@@ -42,50 +42,102 @@ namespace anvil {
 	private:
 		enum { MAX_NESTED_TASKS = 256u };
 
-		std::atomic_uint32_t _counter;
-		TaskThreadLocalData _task_data[MAX_NESTED_TASKS];
+		std::vector<LPVOID> _threads_for_destruction;
+		LPVOID _fiber;
+		std::vector<std::shared_ptr<TaskThreadLocalData>> _tasks;
+		TaskThreadLocalData* _current_task;
+		uint32_t _task_counter;
 	public:
 
 		_TaskThreadLocalData() :
-			_counter(0u)
-		{}
-
-		inline void OnTaskExecuteBegin(Task& task) {
-			if (_counter >= MAX_NESTED_TASKS) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteBegin : Too many tasks are already executing on this thread");
-			TaskThreadLocalData& data = _task_data[_counter++];
-			data.task = &task;
+			_fiber(nullptr),
+			_current_task(nullptr),
+			_task_counter(0u)
+		{
+			_fiber = ConvertThreadToFiber(nullptr);
 		}
 
-		inline void OnTaskExecuteEnd(Task& task) {
+		void SwitchToMainFiber() {
+			// Are we currently executing the main fiber?
+			if (_current_task == nullptr) return;
+
+			// Switch to it
+			_task_counter = 0u;
+			_current_task = nullptr;
+			SwitchToFiber(_fiber);
+		}
+
+		bool SwitchToTask(TaskThreadLocalData& task, bool switch_to_main_on_failure) {
+			// Delete old fibers
+			while (!_threads_for_destruction.empty()) {
+				DeleteFiber(_threads_for_destruction.back());
+				_threads_for_destruction.pop_back();
+			}
+
+			if (true) { //! \todo Check if the task is able to execute
+				_current_task = &task;
+				SwitchToFiber(task.task->_fiber);
+				return true;
+			}
+
+			if (switch_to_main_on_failure) {
+				// Switch to the main thread fiber instead
+				SwitchToMainFiber();
+			}
+			return false;
+		}
+
+		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
+			//!< Cycle though the tasks in order
+			if (_task_counter > _tasks.size()) _task_counter = 0u;
+			if (!_tasks.empty()) {
+				if(SwitchToTask(*_tasks[_task_counter++], false)) return true;
+			}
+
+			// Switch to the main thread fiber instead
+			if(switch_to_main_on_failure) SwitchToMainFiber();
+			return false;
+		}
+
+		inline void OnTaskExecuteBegin(Task& task) {
+			std::shared_ptr<TaskThreadLocalData> data(new TaskThreadLocalData);
+			data->task = &task;
+			_tasks.push_back(data);
+		}
+
+		void OnTaskExecuteEnd(Task& task) {
 #if ANVIL_DEBUG_TASKS
 			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
 			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
 #endif
-			--_counter;
+			auto end = _tasks.end();
+			auto i = std::find_if(_tasks.begin(), end, [&task](const std::shared_ptr<TaskThreadLocalData>& data)->bool {
+				return data->task == &task;
+			});
+			if (i != end) _tasks.erase(i);
+
+			_threads_for_destruction.push_back(task._fiber);
+			task._fiber = nullptr;
 		}
 
 		inline TaskThreadLocalData* GetCurrentExecutingTaskData() {
-			const uint32_t c = _counter;
-			return c == 0u ? nullptr : _task_data + (c - 1u);
+			return _current_task;
 		}
 
 		TaskThreadLocalData* GetTaskData(Task& task) {
-			const uint32_t c = _counter;
-			for (uint32_t i = 0u; i < c; ++i) {
-				TaskThreadLocalData& data = _task_data[i];
-				if (data.task == &task) return &data;
+			for (std::shared_ptr<TaskThreadLocalData>& data : _tasks) {
+				if (data->task == &task) return data.get();
 			}
 
 			return nullptr;
 		}
 
 		inline TaskThreadLocalData* GetTaskData(size_t index) {
-			if (_counter == 0u) return nullptr;
-			return _task_data + index;
+			return _tasks.data()[index].get();
 		}
 
 		inline uint32_t GetNumberOfTasks() const {
-			return _counter;
+			return _tasks.size();
 		}
 	};
 
@@ -316,9 +368,7 @@ namespace anvil {
 
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
-#if ANVIL_TASK_RUNTIME_DATA
-		_runtime_data(nullptr),
-#endif
+		_fiber(nullptr),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
@@ -626,49 +676,8 @@ APPEND_TIME:
 			CatchException(std::move(std::current_exception()), false);
 		}
 
-		// If an error hasn't been detected yet
-		if (_state != Task::STATE_CANCELED) {
-
-			// Execute the task
-			_state = Task::STATE_EXECUTING;
-			try {
-				OnExecution();
-				_state = Task::STATE_COMPLETE;
-			} catch (std::exception& e) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
-#endif
-				CatchException(std::move(std::current_exception()), true);
-			} catch (...) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(this, nullptr, "Caught non-C++ exception on thread %thread%");
-#endif
-				CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
-			}
-
-			try {
-				g_thread_local_data.OnTaskExecuteEnd(*this);
-			} catch (std::exception& e) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(this, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
-#endif
-				CatchException(std::move(std::current_exception()), false);
-			} catch (...) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(this, nullptr, "Caught non-C++ exception on thread %thread%");
-#endif
-				CatchException(std::exception_ptr(), false);
-			}
-		}
-
-		// Post-execution cleanup
-		_scheduler = INVALID_SCHEDULER;
-
-#if ANVIL_DEBUG_TASKS
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
-#endif
-		// Wake waiting threads
-		if (scheduler) scheduler->TaskQueueNotify();
+		// Switch control to the task's fiber
+		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this), false);
 	}
 
 	Task* Task::GetParent() const throw() {
@@ -696,6 +705,131 @@ APPEND_TIME:
 	size_t Task::GetNestingDepth() const throw() {
 		const Task* const p = GetParent();
 		return p ? p->GetNestingDepth() + 1u : 0u;
+	}
+
+
+	void WINAPI Task::FiberFunction(LPVOID param) {
+		Task& task = *static_cast<Task*>(param);
+		
+		
+		const auto CatchException = [&task](std::exception_ptr&& exception, bool set_exception) {
+			// Handle the exception
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			if (set_exception) task._exception = std::move(exception);
+#endif
+
+#if ANVIL_DEBUG_TASKS
+			{
+				std::string message = "Task %task% threw exception ";
+				switch (_state) {
+				case STATE_SCHEDULED:
+					message += "before starting execution";
+					break;
+				case STATE_EXECUTING:
+					message += "while executing for ";
+APPEND_TIME:
+					message += std::to_string(GetDebugTime() - _debug_timer) + " milliseconds";
+					break;
+				case STATE_COMPLETE:
+					message += "after completing execution, which lasted ";
+					goto APPEND_TIME;
+				case STATE_CANCELED:
+					message += "after being canceled";
+					break;
+				default:
+					message += "in an undefined state";
+					break;
+				};
+
+				message += " on thread %thread%";
+
+				anvil::PrintDebugMessage(&task, nullptr, message.c_str());
+			}
+#endif
+			// If the exception was caught after the task finished execution
+			if (task._state == STATE_COMPLETE || task._state == STATE_CANCELED) {
+				// Do nothing
+
+			// If the exception was caught before or during execution
+			} else {			
+				// Cancel the Task
+				task._state = Task::STATE_CANCELED;
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&task, nullptr, "Task %task% canceled due to an error");
+#endif
+#if ANVIL_TASK_CALLBACKS
+				// Call the cancelation callback
+				try {
+					task.OnCancel();
+				} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+					anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+#if ANVIL_TASK_HAS_EXCEPTIONS
+					// Task caught during execution takes priority as it probably has more useful debugging information
+					if (!set_exception) task._exception = std::current_exception();
+#endif
+				} catch (...) {
+#if ANVIL_DEBUG_TASKS
+					anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+#if ANVIL_TASK_HAS_EXCEPTIONS
+					// Task caught during execution takes priority as it probably has more useful debugging information
+					if (!set_exception) task._exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
+#endif
+				}
+#endif
+			}
+		};
+
+		// If an error hasn't been detected yet
+		if (task._state != Task::STATE_CANCELED) {
+
+			// Execute the task
+			task._state = Task::STATE_EXECUTING;
+			try {
+				task.OnExecution();
+				task._state = Task::STATE_COMPLETE;
+			}
+			catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+				CatchException(std::move(std::current_exception()), true);
+			}
+			catch (...) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+				CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
+			}
+		}
+
+		// Post-execution cleanup
+		task._scheduler = INVALID_SCHEDULER;
+
+#if ANVIL_DEBUG_TASKS
+		anvil::PrintDebugMessage(&task, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+#endif
+		// Wake waiting threads
+		if (task._scheduler) task._scheduler->TaskQueueNotify(); //! \bug Scheduler set to null before this executes
+
+		try {
+			g_thread_local_data.OnTaskExecuteEnd(task);
+		} catch (std::exception& e) {
+#if ANVIL_DEBUG_TASKS
+			anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
+#endif
+			CatchException(std::move(std::current_exception()), false);
+		} catch (...) {
+#if ANVIL_DEBUG_TASKS
+			anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
+#endif
+			CatchException(std::exception_ptr(), false);
+		}
+
+		// Return control to the main thread
+		g_thread_local_data.SwitchToMainFiber();
 	}
 
 	// Scheduler
@@ -822,7 +956,10 @@ APPEND_TIME:
 	}
 
 	bool Scheduler::TryToExecuteTask() throw() {
-		// Get the next task
+		// Try to resume execution of an existing task
+		if(g_thread_local_data.SwitchToAnyTask(false)) return true;
+
+		// Try to start the execution of a new task
 		Task* task = RemoveNextTaskFromQueue();
 
 		// If there isn't a task available then return
@@ -928,6 +1065,8 @@ APPEND_TIME:
 				continue;
 			}
 #endif
+
+			t._fiber = CreateFiber(0u, Task::FiberFunction, &t);
 		}
 
 		// Add to task queue

@@ -69,7 +69,9 @@ namespace anvil {
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
 		Task& operator=(Task&&) = delete;
-		Task& operator=(const Task&) = delete;
+		Task& operator=(const Task&) = delete; 
+		
+		static void WINAPI FiberFunction(LPVOID param);
 
 		/*!
 			\return Pointer to an attached scheduler, nullptr if none 
@@ -80,6 +82,8 @@ namespace anvil {
 			\brief Calls Task::OnExecution() with proper state changes and exception handling
 		*/
 		void Execute() throw();
+
+		LPVOID _fiber;
 
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;
@@ -157,6 +161,7 @@ namespace anvil {
 #endif
 	public:
 		friend Scheduler;
+		friend class _TaskThreadLocalData;
 
 		/*!
 			\brief Create a new task.
