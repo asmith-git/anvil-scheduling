@@ -61,6 +61,8 @@ namespace anvil {
 			_task_counter(0u)
 		{
 			_fiber = ConvertThreadToFiber(nullptr);
+			_threads_for_destruction.reserve(100);
+			_tasks.reserve(100);
 		}
 
 		void SwitchToMainFiber() {
@@ -80,7 +82,8 @@ namespace anvil {
 				_threads_for_destruction.pop_back();
 			}
 
-			if (task.yield_condition == nullptr || (*task.yield_condition)()) { //! \todo Check if the task is able to execute
+			// If the task is able to execute
+			if (task.yield_condition == nullptr || (*task.yield_condition)()) {
 				_current_task = &task;
 				SwitchToFiber(task.task->_fiber);
 				return true;
@@ -318,7 +321,7 @@ namespace anvil {
 	}
 #endif
 
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_MEMORY_OPTIMISED
 	static std::mutex g_scheduler_list_lock;
 	enum {
 		INVALID_SCHEDULER = UINT8_MAX,
@@ -445,6 +448,20 @@ namespace anvil {
 #endif
 	}
 
+
+	void Task::SetException(std::exception_ptr exception) {
+#if ANVIL_TASK_HAS_EXCEPTIONS
+	#if ANVIL_TASK_MEMORY_OPTIMISED
+		_exception_flag = 1u;
+	#else
+		_exception = exception;
+	#endif
+#endif
+#if ANVIL_DEBUG_TASKS
+		anvil::PrintDebugMessage(this, nullptr, "Caught exception in task %task% on thread %thread%");
+#endif
+	}
+
 	bool Task::Cancel() throw() {
 		// If no scheduler is attached to this task then it cannot be canceled
 		Scheduler* scheduler = _GetScheduler();
@@ -485,13 +502,9 @@ namespace anvil {
 			try {
 				OnCancel();
 			} catch (std::exception& e) {
-#if ANVIL_TASK_HAS_EXCEPTIONS
-				_exception = std::current_exception();
-#endif
+				SetException(std::current_exception());
 			} catch (...) {
-#if ANVIL_TASK_HAS_EXCEPTIONS
-				_exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
-#endif
+				SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
 			}
 			
 #endif
@@ -544,11 +557,18 @@ namespace anvil {
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
+#if ANVIL_TASK_MEMORY_OPTIMISED 
+		if (_exception_flag) {
+			_exception_flag = 0u;
+			throw std::runtime_error("anvil::Task::Yield : An exception was caught during execution");
+		}
+#else
 		if (_exception) {
 			std::exception_ptr tmp = _exception;
 			_exception = std::exception_ptr();
 			std::rethrow_exception(tmp);
 		}
+#endif
 #endif
 	}
 
@@ -588,7 +608,7 @@ HANDLE_ERROR:
 	}
 
 	Scheduler* Task::_GetScheduler() const throw() {
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_MEMORY_OPTIMISED
 		if (_scheduler == INVALID_SCHEDULER) return nullptr;
 		return g_scheduler_list[_scheduler];
 #else
@@ -610,7 +630,7 @@ HANDLE_ERROR:
 		const auto CatchException = [this](std::exception_ptr&& exception, bool set_exception) {
 			// Handle the exception
 #if ANVIL_TASK_HAS_EXCEPTIONS
-			if (set_exception) this->_exception = std::move(exception);
+			if (set_exception) this->SetException(std::move(exception));
 #endif
 
 #if ANVIL_DEBUG_TASKS
@@ -662,7 +682,7 @@ APPEND_TIME:
 #endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 					// Task caught during execution takes priority as it probably has more useful debugging information
-					if (!set_exception) this->_exception = std::current_exception();
+					if (!set_exception) this->SetException(std::current_exception());
 #endif
 				} catch (...) {
 #if ANVIL_DEBUG_TASKS
@@ -670,7 +690,7 @@ APPEND_TIME:
 #endif
 #if ANVIL_TASK_HAS_EXCEPTIONS
 					// Task caught during execution takes priority as it probably has more useful debugging information
-					if (!set_exception) this->_exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
+					if (!set_exception) this->SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
 #endif
 				}
 #endif
@@ -725,9 +745,7 @@ APPEND_TIME:
 
 			const auto CatchException = [&task](std::exception_ptr&& exception, bool set_exception) {
 				// Handle the exception
-	#if ANVIL_TASK_HAS_EXCEPTIONS
-				if (set_exception) task._exception = std::move(exception);
-	#endif
+				if (set_exception) task.SetException(std::move(exception));
 
 	#if ANVIL_DEBUG_TASKS
 				{
@@ -775,22 +793,12 @@ APPEND_TIME:
 						task.OnCancel();
 					}
 					catch (std::exception& e) {
-	#if ANVIL_DEBUG_TASKS
-						anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
-	#endif
-	#if ANVIL_TASK_HAS_EXCEPTIONS
 						// Task caught during execution takes priority as it probably has more useful debugging information
-						if (!set_exception) task._exception = std::current_exception();
-	#endif
+						if (!set_exception) task.SetException(std::current_exception());
 					}
 					catch (...) {
-	#if ANVIL_DEBUG_TASKS
-						anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
-	#endif
-	#if ANVIL_TASK_HAS_EXCEPTIONS
 						// Task caught during execution takes priority as it probably has more useful debugging information
-						if (!set_exception) task._exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
-	#endif
+						if (!set_exception) task.SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
 					}
 	#endif
 				}
@@ -806,15 +814,8 @@ APPEND_TIME:
 					task._state = Task::STATE_COMPLETE;
 				}
 				catch (std::exception& e) {
-	#if ANVIL_DEBUG_TASKS
-					anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
-	#endif
 					CatchException(std::move(std::current_exception()), true);
-				}
-				catch (...) {
-	#if ANVIL_DEBUG_TASKS
-					anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
-	#endif
+				} catch (...) {
 					CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
 				}
 			}
@@ -826,21 +827,15 @@ APPEND_TIME:
 			anvil::PrintDebugMessage(&task, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - task._debug_timer) + " milliseconds");
 	#endif
 			// Wake waiting threads
-			if (task._scheduler) task._scheduler->TaskQueueNotify(); //! \bug Scheduler set to null before this executes
+			//if (task._scheduler) task._scheduler->TaskQueueNotify(); //! \bug Scheduler set to null before this executes
 
 			try {
 				g_thread_local_data.OnTaskExecuteEnd(task);
 			}
 			catch (std::exception& e) {
-	#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(&task, nullptr, std::string("Caught exception on thread %thread% : ") + e.what());
-	#endif
 				CatchException(std::move(std::current_exception()), false);
 			}
 			catch (...) {
-	#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(&task, nullptr, "Caught non-C++ exception on thread %thread%");
-	#endif
 				CatchException(std::exception_ptr(), false);
 			}
 
@@ -860,7 +855,7 @@ APPEND_TIME:
 		_no_execution_on_wait(false)
 #endif
 	{
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_MEMORY_OPTIMISED
 		AddScheduler(*this);
 #endif
 #if ANVIL_DEBUG_TASKS
@@ -870,7 +865,7 @@ APPEND_TIME:
 
 	Scheduler::~Scheduler() {
 		//! \bug Scheduled tasks are left in an undefined state
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_MEMORY_OPTIMISED
 		RemoveScheduler(*this);
 #endif
 #if ANVIL_DEBUG_TASKS
@@ -1029,7 +1024,7 @@ APPEND_TIME:
 	}
 
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
+#if ANVIL_TASK_MEMORY_OPTIMISED
 		const auto this_scheduler = GetSchedulerIndex(*this);
 #else
 		const auto this_scheduler = this;
@@ -1059,7 +1054,11 @@ APPEND_TIME:
 			t._scheduler = this_scheduler;
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
+#if ANVIL_TASK_MEMORY_OPTIMISED
+			t._exception_flag = 0u;
+#else
 			t._exception = std::exception_ptr();
+#endif
 #endif
 
 #if ANVIL_TASK_RUNTIME_DATA
@@ -1075,21 +1074,11 @@ APPEND_TIME:
 			try {
 				t.OnScheduled();
 			} catch (std::exception& e) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(&t, this, std::string("Task (%task%) threw exception during OnScheduled (") + e.what());
-#endif
-#if ANVIL_TASK_HAS_EXCEPTIONS
-				t._exception = std::current_exception();
-#endif
+				t.SetException(std::current_exception());
 				t.Cancel();
 				continue;
 			} catch (...) {
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(&t, this, "Task (%task%) threw non C++ exception value during OnScheduled");
-#endif
-#if ANVIL_TASK_HAS_EXCEPTIONS
-				t._exception = std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"));
-#endif
+				t.SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
 				t.Cancel();
 				continue;
 			}

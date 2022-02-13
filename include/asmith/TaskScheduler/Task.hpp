@@ -83,31 +83,32 @@ namespace anvil {
 		*/
 		void Execute() throw();
 
+		void SetException(std::exception_ptr exception);
+
 		LPVOID _fiber;
+#if ANVIL_TASK_MEMORY_OPTIMISED == 0
 		std::atomic_uint32_t _wait_flag;
+		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
+#if ANVIL_TASK_HAS_EXCEPTIONS
+		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
+#endif
+#endif
 
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;
-#endif
-
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		uint8_t _scheduler;		//!< Remembers which scheduler this task is attached to, otherwise 255
-#else
-		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
 
 #if ANVIL_TASK_PARENT
 		Task* _parent;
 #endif
 
-#if ANVIL_TASK_HAS_EXCEPTIONS
-	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
-#endif
-
 #if ANVIL_TASK_MEMORY_OPTIMISED
 		struct {
-			uint8_t _priority : 4u;		//!< Stores the scheduling priority of the task
-			uint8_t _state : 4u;		//!< Stores the current state of the task
+			uint32_t _scheduler : 8u;
+			uint32_t _priority : 4u;		//!< Stores the scheduling priority of the task
+			uint32_t _state : 4u;		//!< Stores the current state of the task
+			uint32_t _wait_flag : 1u;
+			uint32_t _exception_flag : 1u;
 		};
 #else
 		Priority _priority;				//!< Stores the scheduling priority of the task
@@ -270,6 +271,10 @@ namespace anvil {
 		static void SetDebugStream(std::ostream&);
 #endif
 
+	};
+
+	enum {
+		TASKSIZE = sizeof(Task)
 	};
 	
 	/*!

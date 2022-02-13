@@ -63,14 +63,6 @@
 	#define ANVIL_TASK_DELAY_SCHEDULING 0
 #endif
 
-// Define derived options
-
-#if ANVIL_TASK_MEMORY_OPTIMISED
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 1
-#else
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 0
-#endif 
-
 // Check for invalid exension options
 
 #if ANVIL_TASK_EXTENDED_PRIORITY2
