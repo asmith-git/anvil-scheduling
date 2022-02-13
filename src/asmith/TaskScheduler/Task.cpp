@@ -110,6 +110,8 @@ namespace anvil {
 			std::shared_ptr<TaskThreadLocalData> data(new TaskThreadLocalData);
 			data->task = &task;
 			_tasks.push_back(data);
+
+			task._fiber = CreateFiber(0u, Task::FiberFunction, &task);
 		}
 
 		void OnTaskExecuteEnd(Task& task) {
@@ -521,7 +523,7 @@ namespace anvil {
 		);
 #endif
 
-		#define YieldCondition() (_state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED)
+		#define YieldCondition() ((_state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) && _fiber == nullptr)
 
 		if (will_yield) {
 			scheduler->Yield([this]()->bool {
@@ -1085,8 +1087,6 @@ APPEND_TIME:
 				continue;
 			}
 #endif
-
-			t._fiber = CreateFiber(0u, Task::FiberFunction, &t);
 		}
 
 		// Add to task queue
