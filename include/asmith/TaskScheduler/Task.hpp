@@ -29,7 +29,11 @@
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
-#define ANVIL_TASK_RUNTIME_DATA ANVIL_TASK_PARENT
+#if ANVIL_TASK_FIBERS
+	#define NOMINMAX
+	#include <windows.h>
+	#undef Yield
+#endif
 
 namespace anvil {
 
@@ -67,15 +71,6 @@ namespace anvil {
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete;
 
-#if ANVIL_TASK_RUNTIME_DATA
-		struct RuntimeData {
-#if ANVIL_TASK_PARENT
-			Task* parent;
-			std::vector<Task*> children;
-#endif
-		}; //!< Data needed while a task is executing
-#endif
-
 		/*!
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
@@ -96,8 +91,8 @@ namespace anvil {
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #endif
 
-#if ANVIL_TASK_RUNTIME_DATA
-		RuntimeData* _runtime_data;
+#if ANVIL_TASK_PARENT
+		Task* _parent;
 #endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS

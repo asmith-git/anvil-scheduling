@@ -91,6 +91,41 @@ namespace anvil {
 
 	thread_local _TaskThreadLocalData g_thread_local_data;
 
+	class _GlobalTaskManager {
+	private:
+		std::vector<Task*> _tasks;
+		std::mutex _lock;
+	public:
+		void OnTaskCreated(Task& t) {
+			std::lock_guard<std::mutex> lock(_lock);
+			_tasks.push_back(&t);
+		}
+
+		void OnTaskDestroyed(Task& t) {
+			std::lock_guard<std::mutex> lock(_lock);
+			auto end = _tasks.end();
+			auto i = std::find(_tasks.begin(), end, &t);
+			if (i != end) _tasks.erase(i);
+		}
+
+		std::vector<Task*> FindChildren(const Task& p) {
+			std::vector<Task*> children;
+
+			{
+				std::lock_guard<std::mutex> lock(_lock);
+				for (Task* c : _tasks) {
+					if (c->GetParent() == &p) {
+						children.push_back(c);
+					}
+				}
+			}
+
+			return children;
+		}
+	};
+
+	static _GlobalTaskManager g_task_manager;
+
 #if ANVIL_USE_NEST_COUNTER
 	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
 #endif
@@ -290,18 +325,14 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is created on thread %thread%");
 #endif
+		g_task_manager.OnTaskCreated(*this);
 	}
 
 	Task::~Task() {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
 #endif
-#if ANVIL_TASK_RUNTIME_DATA
-		if (_runtime_data) {
-			delete _runtime_data;
-			_runtime_data = nullptr;
-		}
-#endif
+		g_task_manager.OnTaskDestroyed(*this);
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
@@ -642,21 +673,22 @@ APPEND_TIME:
 
 	Task* Task::GetParent() const throw() {
 #if ANVIL_TASK_PARENT
-		if(_runtime_data) return _runtime_data->parent;
+		return _parent;
 #endif
 		return nullptr;
 	}
 
 	size_t Task::GetChildCount() const throw() {
 #if ANVIL_TASK_PARENT
-		if (_runtime_data) return _runtime_data->children.size();
+		return g_task_manager.FindChildren(*this).size(); //! \todo Optimise so that children are not search multiple times
 #endif
 		return 0u;
 
 	}
 	Task* Task::GetChild(size_t i) const throw() {
 #if ANVIL_TASK_PARENT
-		if (_runtime_data) if (i < _runtime_data->children.size()) _runtime_data->children.data()[i];
+		std::vector<Task*> children = g_task_manager.FindChildren(*this); //! \todo Optimise so that children are not search multiple times
+		if (i < children.size()) children.data()[i];
 #endif
 		return nullptr;
 	}
@@ -869,8 +901,7 @@ APPEND_TIME:
 #endif
 
 #if ANVIL_TASK_PARENT
-			t._runtime_data->parent = parent;
-			if(parent) parent->_runtime_data->children.push_back(&t);
+			t._parent = parent;
 #endif
 
 #if ANVIL_TASK_CALLBACKS
