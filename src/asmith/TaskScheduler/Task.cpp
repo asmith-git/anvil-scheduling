@@ -45,7 +45,11 @@ namespace anvil {
 	};
 
 	struct FiberData {
+#if ANVIL_TASK_FIBERS
 		LPVOID fiber;
+#else
+		void* fiber;
+#endif
 		Task* task;
 
 		FiberData() :
@@ -67,24 +71,26 @@ namespace anvil {
 		uint32_t _task_counter;
 
 		FiberData* AllocateFiber() {
-#if ANVIL_TASK_FIBERS
 			// For for an unused fiber
 			for (std::shared_ptr<FiberData>& fiber : _fibers) {
 				if (fiber->task == nullptr) {
 					return fiber.get();
 				}
 			}
-#endif
 
 			// Allocate a new fiber
 			std::shared_ptr<FiberData> fiber(new FiberData);
+#if ANVIL_TASK_FIBERS
 			fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber.get());
+#endif
 			_fibers.push_back(fiber);
 			return fiber.get();
 		}
 
 		void DeallocateFiber(FiberData* fiber) {
+#if ANVIL_TASK_FIBERS
 			fiber->task = nullptr;
+#endif
 		}
 	public:
 
@@ -102,10 +108,12 @@ namespace anvil {
 		}
 
 		~_TaskThreadLocalData() {
+#if ANVIL_TASK_FIBERS
 			// Delete old fibers
 			for (std::shared_ptr<FiberData>& fiber : _fibers) {
 				DeleteFiber(fiber->fiber);
 			}
+#endif
 		}
 
 		void SwitchToMainFiber() {
@@ -801,7 +809,7 @@ APPEND_TIME:
 	void WINAPI Task::FiberFunction(LPVOID param) {
 		while (true) {
 #else
-	void Task::FiberFunction(LPVOID* param) {
+	void Task::FiberFunction(void* param) {
 		if (true) {
 #endif
 			{

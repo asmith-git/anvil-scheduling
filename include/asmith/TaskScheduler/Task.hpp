@@ -74,7 +74,7 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		static void WINAPI FiberFunction(LPVOID param);
 #else
-		static void FiberFunction(LPVOID* param);
+		static void FiberFunction(void* param);
 #endif
 
 		/*!
