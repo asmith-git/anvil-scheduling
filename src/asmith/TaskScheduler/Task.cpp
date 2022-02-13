@@ -36,6 +36,13 @@ namespace anvil {
 
 	struct TaskThreadLocalData {
 		Task* task;
+		std::function<bool(void)> yield_condition;
+		bool yielding;
+
+		TaskThreadLocalData() :
+			task(nullptr),
+			yielding(false)
+		{}
 	};
 
 	class _TaskThreadLocalData {
@@ -74,7 +81,7 @@ namespace anvil {
 				_threads_for_destruction.pop_back();
 			}
 
-			if (true) { //! \todo Check if the task is able to execute
+			if ((! task.yielding) || task.yield_condition()) { //! \todo Check if the task is able to execute
 				_current_task = &task;
 				SwitchToFiber(task.task->_fiber);
 				return true;
@@ -89,7 +96,7 @@ namespace anvil {
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
 			//!< Cycle though the tasks in order
-			if (_task_counter > _tasks.size()) _task_counter = 0u;
+			if (_task_counter >= _tasks.size()) _task_counter = 0u;
 			if (!_tasks.empty()) {
 				if(SwitchToTask(*_tasks[_task_counter++], false)) return true;
 			}
@@ -973,6 +980,13 @@ APPEND_TIME:
 	void Scheduler::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
 		max_sleep_milliseconds = std::max(1u, max_sleep_milliseconds);
 
+		// If this function is being called by a task
+		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
+		if (data) {
+			data->yielding = true;
+			data->yield_condition = condition;
+		}
+
 		// While the condition is not met
 		while (!condition()) {
 			// Try to execute a scheduled task
@@ -991,6 +1005,12 @@ APPEND_TIME:
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
 #endif
 			}
+		}
+
+		// If this function is being called by a task
+		if (data) {
+			data->yielding = false;
+			data->yield_condition = []()->bool { return true; };
 		}
 	}
 
