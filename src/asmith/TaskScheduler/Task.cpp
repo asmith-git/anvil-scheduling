@@ -732,14 +732,14 @@ APPEND_TIME:
 #if ANVIL_DEBUG_TASKS
 			{
 				std::string message = "Task %task% threw exception ";
-				switch (_state) {
+				switch (task._state) {
 				case STATE_SCHEDULED:
 					message += "before starting execution";
 					break;
 				case STATE_EXECUTING:
 					message += "while executing for ";
 APPEND_TIME:
-					message += std::to_string(GetDebugTime() - _debug_timer) + " milliseconds";
+					message += std::to_string(GetDebugTime() - task._debug_timer) + " milliseconds";
 					break;
 				case STATE_COMPLETE:
 					message += "after completing execution, which lasted ";
@@ -820,7 +820,7 @@ APPEND_TIME:
 		task._scheduler = INVALID_SCHEDULER;
 
 #if ANVIL_DEBUG_TASKS
-		anvil::PrintDebugMessage(&task, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - _debug_timer) + " milliseconds");
+		anvil::PrintDebugMessage(&task, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - task._debug_timer) + " milliseconds");
 #endif
 		// Wake waiting threads
 		if (task._scheduler) task._scheduler->TaskQueueNotify(); //! \bug Scheduler set to null before this executes
