@@ -84,6 +84,7 @@ namespace anvil {
 		void Execute() throw();
 
 		LPVOID _fiber;
+		std::atomic_uint32_t _wait_flag;
 
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;

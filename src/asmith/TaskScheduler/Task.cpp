@@ -378,6 +378,7 @@ namespace anvil {
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
 		_fiber(nullptr),
+		_wait_flag(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
@@ -504,6 +505,7 @@ namespace anvil {
 		if (notify) scheduler->TaskQueueNotify();
 
 		// Canceled successfully
+		_wait_flag = 1u;
 		return true;
 	}
 
@@ -523,7 +525,7 @@ namespace anvil {
 		);
 #endif
 
-		#define YieldCondition() ((_state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) && _fiber == nullptr)
+		#define YieldCondition() (_wait_flag == 1)
 
 		if (will_yield) {
 			scheduler->Yield([this]()->bool {
@@ -837,6 +839,8 @@ APPEND_TIME:
 			CatchException(std::exception_ptr(), false);
 		}
 
+		task._wait_flag = 1;
+
 		// Return control to the main thread
 		g_thread_local_data.SwitchToMainFiber();
 	}
@@ -1047,6 +1051,7 @@ APPEND_TIME:
 
 			// Change state
 			t._state = Task::STATE_SCHEDULED;
+			t._wait_flag = 0u;
 
 			// Initialise scheduling data
 			t._scheduler = this_scheduler;
