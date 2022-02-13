@@ -70,8 +70,12 @@ namespace anvil {
 		Task(const Task&) = delete;
 		Task& operator=(Task&&) = delete;
 		Task& operator=(const Task&) = delete; 
-		
+
+#if ANVIL_TASK_FIBERS
 		static void WINAPI FiberFunction(LPVOID param);
+#else
+		static void FiberFunction(Task* param);
+#endif
 
 		/*!
 			\return Pointer to an attached scheduler, nullptr if none 
@@ -85,7 +89,9 @@ namespace anvil {
 
 		void SetException(std::exception_ptr exception);
 
+#if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
+#endif
 #if ANVIL_TASK_MEMORY_OPTIMISED == 0
 		std::atomic_uint32_t _wait_flag;
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
@@ -271,10 +277,6 @@ namespace anvil {
 		static void SetDebugStream(std::ostream&);
 #endif
 
-	};
-
-	enum {
-		TASKSIZE = sizeof(Task)
 	};
 	
 	/*!

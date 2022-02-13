@@ -48,21 +48,37 @@ namespace anvil {
 	private:
 		enum { MAX_NESTED_TASKS = 256u };
 
+#if ANVIL_TASK_FIBERS
 		std::vector<LPVOID> _threads_for_destruction;
 		LPVOID _fiber;
+#endif
 		std::vector<std::shared_ptr<TaskThreadLocalData>> _tasks;
 		TaskThreadLocalData* _current_task;
 		uint32_t _task_counter;
 	public:
 
 		_TaskThreadLocalData() :
+#if ANVIL_TASK_FIBERS
 			_fiber(nullptr),
+#endif
 			_current_task(nullptr),
 			_task_counter(0u)
 		{
+#if ANVIL_TASK_FIBERS
 			_fiber = ConvertThreadToFiber(nullptr);
 			_threads_for_destruction.reserve(100);
 			_tasks.reserve(100);
+#endif
+		}
+
+		~_TaskThreadLocalData() {
+#if ANVIL_TASK_FIBERS
+			// Delete old fibers
+			while (!_threads_for_destruction.empty()) {
+				DeleteFiber(_threads_for_destruction.back());
+				_threads_for_destruction.pop_back();
+			}
+#endif
 		}
 
 		void SwitchToMainFiber() {
@@ -70,11 +86,14 @@ namespace anvil {
 			if (_current_task == nullptr) return;
 
 			// Switch to it
+#if ANVIL_TASK_FIBERS
 			_task_counter = 0u;
 			_current_task = nullptr;
 			SwitchToFiber(_fiber);
+#endif
 		}
 
+#if ANVIL_TASK_FIBERS
 		bool SwitchToTask(TaskThreadLocalData& task, bool switch_to_main_on_failure) {
 			// Delete old fibers
 			while (!_threads_for_destruction.empty()) {
@@ -107,13 +126,16 @@ namespace anvil {
 			if(switch_to_main_on_failure) SwitchToMainFiber();
 			return false;
 		}
+#endif
 
 		inline void OnTaskExecuteBegin(Task& task) {
 			std::shared_ptr<TaskThreadLocalData> data(new TaskThreadLocalData);
 			data->task = &task;
 			_tasks.push_back(data);
 
+#if ANVIL_TASK_FIBERS
 			task._fiber = CreateFiber(0u, Task::FiberFunction, &task);
+#endif
 		}
 
 		void OnTaskExecuteEnd(Task& task) {
@@ -127,8 +149,10 @@ namespace anvil {
 			});
 			if (i != end) _tasks.erase(i);
 
+#if ANVIL_TASK_FIBERS
 			_threads_for_destruction.push_back(task._fiber);
 			task._fiber = nullptr;
+#endif
 		}
 
 		inline TaskThreadLocalData* GetCurrentExecutingTaskData() {
@@ -379,7 +403,9 @@ namespace anvil {
 
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
+#if ANVIL_TASK_FIBERS
 		_fiber(nullptr),
+#endif
 		_wait_flag(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
@@ -707,7 +733,11 @@ APPEND_TIME:
 		}
 
 		// Switch control to the task's fiber
+#if ANVIL_TASK_FIBERS
 		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this), false);
+#else
+		FiberFunction(this);
+#endif
 	}
 
 	Task* Task::GetParent() const throw() {
@@ -737,8 +767,11 @@ APPEND_TIME:
 		return p ? p->GetNestingDepth() + 1u : 0u;
 	}
 
-
+#if ANVIL_TASK_FIBERS
 	void WINAPI Task::FiberFunction(LPVOID param) {
+#else
+	void Task::FiberFunction(Task* param) {
+#endif
 		{
 			Task& task = *static_cast<Task*>(param);
 
@@ -970,8 +1003,10 @@ APPEND_TIME:
 	}
 
 	bool Scheduler::TryToExecuteTask() throw() {
+#if ANVIL_TASK_FIBERS
 		// Try to resume execution of an existing task
 		if(g_thread_local_data.SwitchToAnyTask(false)) return true;
+#endif
 
 		// Try to start the execution of a new task
 		Task* task = RemoveNextTaskFromQueue();
