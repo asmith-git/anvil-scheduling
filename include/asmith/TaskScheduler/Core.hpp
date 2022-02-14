@@ -63,6 +63,10 @@
 	#define ANVIL_TASK_DELAY_SCHEDULING 0
 #endif
 
+#ifndef ANVIL_DLL_EXPORT
+#define  ANVIL_DLL_EXPORT __declspec(dllimport)
+#endif
+
 // Check for invalid exension options
 
 #if ANVIL_TASK_EXTENDED_PRIORITY2

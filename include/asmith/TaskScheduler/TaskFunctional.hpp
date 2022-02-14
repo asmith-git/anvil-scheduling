@@ -40,7 +40,7 @@ namespace anvil {
 			\see TaskFunctional
 		*/
 		template<class F>
-		class TaskFunctional_NoReturn final : public Task {
+		class ANVIL_DLL_EXPORT TaskFunctional_NoReturn final : public Task {
 		public:
 			typedef F Function;
 		private:
@@ -109,7 +109,7 @@ namespace anvil {
 			\see TaskFunctional
 		*/
 		template<class R, class F>
-		class TaskFunctional_Return final : public TaskWithReturn<R> {
+		class ANVIL_DLL_EXPORT TaskFunctional_Return final : public TaskWithReturn<R> {
 		public:
 			typedef F Function;
 		private:

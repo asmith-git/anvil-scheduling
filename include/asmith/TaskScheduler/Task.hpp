@@ -50,7 +50,7 @@ namespace anvil {
 		- ANVIL_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
-	class Task {
+	class ANVIL_DLL_EXPORT Task {
 	public:
 		/*!
 			\brief Describes which point in the execution cycle a Task is in.
@@ -289,7 +289,7 @@ namespace anvil {
 		\see Task
 	*/
 	template<class R>
-	class TaskWithReturn : public Task {
+	class ANVIL_DLL_EXPORT TaskWithReturn : public Task {
 	public:
 		typedef R Result;
 	private:

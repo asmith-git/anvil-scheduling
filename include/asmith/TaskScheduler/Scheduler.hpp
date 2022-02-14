@@ -32,7 +32,7 @@
 
 namespace anvil {
 
-	class Scheduler {
+	class ANVIL_DLL_EXPORT Scheduler {
 	private:
 		Scheduler(Scheduler&&) = delete;
 		Scheduler(const Scheduler&) = delete;
