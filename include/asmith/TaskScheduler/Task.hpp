@@ -26,6 +26,7 @@
 #if ANVIL_DEBUG_TASKS
 #include <iostream>
 #endif
+#include <atomic>
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
