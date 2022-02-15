@@ -108,9 +108,9 @@ namespace anvil {
 		Task* _parent;
 #endif
 
-		PriorityValue _priority;		//!< Stores the scheduling priority of the task
-		std::atomic_uint16_t _wait_flag;
-		State _state;					//!< Stores the current state of the task
+		PriorityValue _priority;			//!< Stores the scheduling priority of the task
+		std::atomic_uint16_t _wait_flag;	//!< Set to 1 when it is okay to exit out of Task::Wait()
+		State _state;						//!< Stores the current state of the task
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
@@ -156,6 +156,10 @@ namespace anvil {
 #endif
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
+		/*!
+			\brief Decide which order tasks scheduled with the same priority will execute
+			\return Tasks returning a higher value will execute first
+		*/
 		virtual PriorityInteger CalculateExtendedPriorty() const = 0;
 #endif
 
@@ -274,10 +278,6 @@ namespace anvil {
 
 	};
 
-	enum {
-		TASK_SIZE = sizeof(Task)
-	};
-	
 	/*!
 		\class Task
 		\author Adam G. Smith
