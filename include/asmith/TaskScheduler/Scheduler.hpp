@@ -69,6 +69,7 @@ namespace anvil {
 		void RecalculatedExtendedPriorities();
 #endif
 
+	public:
 #if ANVIL_TASK_EXTENDED_PRIORITY == 0
 		enum {
 			MAIN_PRIORITY_BITS = 8u,
@@ -100,7 +101,6 @@ namespace anvil {
 		};
 		typedef uint64_t PriorityInteger;
 #endif
-	public:
 
 		enum Priority : PriorityInteger {
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
