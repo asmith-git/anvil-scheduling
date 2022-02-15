@@ -1162,4 +1162,14 @@ APPEND_TIME:
 		task.SetPriority(priority);
 		Schedule(task);
 	}
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+	void Scheduler::RecalculatedExtendedPriorities() {
+		std::lock_guard<std::mutex> lock(_mutex);
+		for (Task* t : _task_queue) {
+			t->_priority.extended = t->CalculateExtendedPriorty();
+		}
+		SortTaskQueue();
+	}
+#endif
 }

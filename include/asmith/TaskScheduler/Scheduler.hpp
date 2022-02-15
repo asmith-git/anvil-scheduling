@@ -65,6 +65,10 @@ namespace anvil {
 		bool TryToExecuteTask() throw();
 
 
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		void RecalculatedExtendedPriorities();
+#endif
+
 #if ANVIL_TASK_EXTENDED_PRIORITY == 0
 		enum {
 			MAIN_PRIORITY_BITS = 8u,
