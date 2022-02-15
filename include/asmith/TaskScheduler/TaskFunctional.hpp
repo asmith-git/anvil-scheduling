@@ -66,6 +66,13 @@ namespace anvil {
 
 			}
 #endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+			PriorityInteger CalculateExtendedPriorty() const final {
+				return 0u;
+			}
+#endif
+
 #if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;
@@ -135,6 +142,13 @@ namespace anvil {
 
 			}
 #endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+			Task::PriorityInteger CalculateExtendedPriorty() const final {
+				return 0u;
+			}
+#endif
+
 #if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;

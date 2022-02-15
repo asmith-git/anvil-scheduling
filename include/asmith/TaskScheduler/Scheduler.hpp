@@ -63,25 +63,80 @@ namespace anvil {
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
-	public:
-		friend Task;
-#if ANVIL_TASK_EXTENDED_PRIORITY2
-		enum Priority : uint64_t {
-#elif ANVIL_TASK_EXTENDED_PRIORITY
-		enum Priority : uint32_t {
+
+
+#if ANVIL_TASK_EXTENDED_PRIORITY == 0
+		enum {
+			MAIN_PRIORITY_BITS = 8u,
+			EXTENDED_PRIORITY_BITS = 0u
+		};
+		typedef uint8_t PriorityInteger;
+#elif ANVIL_TASK_EXTENDED_PRIORITY <= 7u
+		enum {
+			MAIN_PRIORITY_BITS = 8u - ANVIL_TASK_EXTENDED_PRIORITY,
+			EXTENDED_PRIORITY_BITS = ANVIL_TASK_EXTENDED_PRIORITY
+		};
+		typedef uint8_t PriorityInteger;
+#elif ANVIL_TASK_EXTENDED_PRIORITY <= 15u
+		enum {
+			MAIN_PRIORITY_BITS = 16u - ANVIL_TASK_EXTENDED_PRIORITY,
+			EXTENDED_PRIORITY_BITS = ANVIL_TASK_EXTENDED_PRIORITY
+		};
+		typedef uint16_t PriorityInteger;
+#elif ANVIL_TASK_EXTENDED_PRIORITY <= 31u
+		enum {
+			MAIN_PRIORITY_BITS = 32u - ANVIL_TASK_EXTENDED_PRIORITY,
+			EXTENDED_PRIORITY_BITS = ANVIL_TASK_EXTENDED_PRIORITY
+		};
+		typedef uint32_t PriorityInteger;
 #else
-		enum Priority : uint8_t {
+		enum {
+			MAIN_PRIORITY_BITS = 64u - ANVIL_TASK_EXTENDED_PRIORITY,
+			EXTENDED_PRIORITY_BITS = ANVIL_TASK_EXTENDED_PRIORITY
+		};
+		typedef uint64_t PriorityInteger;
 #endif
+	public:
+
+		enum Priority : PriorityInteger {
 			PRIORITY_LOWEST = 0u,										//!< The lowest prority level supported by the Scheduler.
-#if ANVIL_TASK_MEMORY_OPTIMISED
-			PRIORITY_HIGHEST = (1 << 6) - 1,
-#else
-			PRIORITY_HIGHEST = (1ull << (sizeof(Priority) * 8ull)) - 1ull,
-#endif	//!< The highest prority level supported by the Scheduler.
+			PRIORITY_HIGHEST = (1 << MAIN_PRIORITY_BITS) - 1,			//!< The highest prority level supported by the Scheduler.
 			PRIORITY_MIDDLE = PRIORITY_HIGHEST / 2u,					//!< The default priority level.
 			PRIORITY_HIGH = PRIORITY_MIDDLE + (PRIORITY_MIDDLE / 2u),	//!< Halfway between PRIORITY_MIDDLE and PRIORITY_HIGHEST.
 			PRIORITY_LOW = PRIORITY_MIDDLE - (PRIORITY_MIDDLE / 2u)		//!< Halfway between PRIORITY_MIDDLE and PRIORITY_LOWEST.
 		};//!< Defines the order in which Tasks are executed.
+
+	protected:
+
+#if ANVIL_TASK_EXTENDED_PRIORITY == 0
+		typedef PriorityInteger PriorityValue;
+#else
+		union PriorityValue {
+			struct {
+				PriorityInteger main : MAIN_PRIORITY_BITS;
+				PriorityInteger extended : EXTENDED_PRIORITY_BITS;
+			};
+			PriorityInteger integer;
+
+			PriorityValue() = default;
+			~PriorityValue() = default;
+			PriorityValue(Priority m, PriorityInteger e = 0u) : main(m), extended(e) {}
+
+			inline bool operator==(const PriorityValue& other) const throw()  { return integer == other.integer; }
+			inline bool operator!=(const PriorityValue& other) const throw()  { return integer != other.integer; }
+			inline bool operator<(const PriorityValue& other) const throw() { return integer < other.integer; }
+			inline bool operator>(const PriorityValue& other) const throw() { return integer > other.integer; }
+			inline bool operator<=(const PriorityValue& other) const throw() { return integer <= other.integer; }
+			inline bool operator>=(const PriorityValue& other) const throw() { return integer >= other.integer; }
+
+			inline operator Priority() const throw() { return static_cast<Priority>(main); }
+			inline PriorityValue& operator=(Priority p) throw() { main = p; return *this; }
+		};
+
+		static_assert(sizeof(PriorityValue) == sizeof(PriorityInteger), "Size of PriorityValue is different than expected");
+#endif
+	public:
+		friend Task;
 
 		Scheduler();
 		virtual ~Scheduler();

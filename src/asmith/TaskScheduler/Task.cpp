@@ -400,59 +400,7 @@ namespace anvil {
 	}
 #endif
 
-#if ANVIL_TASK_MEMORY_OPTIMISED
-	static std::mutex g_scheduler_list_lock;
-	enum {
-		INVALID_SCHEDULER = UINT8_MAX,
-		MAX_SCHEDULERS = INVALID_SCHEDULER
-	};
-	static Scheduler* g_scheduler_list[MAX_SCHEDULERS];
-
-	namespace detail {
-		// I don't think this is required on most compilers, but ensure memory is zeroed on program start
-
-		static uint32_t InitialiseSchedulerList() throw() {
-			memset(g_scheduler_list, 0, sizeof(Scheduler*) * MAX_SCHEDULERS);
-			return 0;
-		}
-
-		static const uint32_t g_ensure_scheduler_list = InitialiseSchedulerList();
-	}
-
-	static uint32_t GetSchedulerIndex(const Scheduler& scheduler) {
-		//! \bug Undefined behaviour if a scheduler is deleted while this function is running
-
-		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
-			if (g_scheduler_list[i] == &scheduler) return i;
-		}
-
-		throw std::runtime_error("Could not find scheduler in global list");
-	}
-
-	static uint32_t AddScheduler(Scheduler& scheduler) {
-		std::lock_guard<std::mutex> lock(g_scheduler_list_lock);
-		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
-			if (g_scheduler_list[i] == nullptr) {
-				g_scheduler_list[i] = &scheduler;
-				return i;
-			}
-		}
-		throw std::runtime_error("Too many schedulers in global list");
-	}
-
-	static void RemoveScheduler(const Scheduler& scheduler) {
-		std::lock_guard<std::mutex> lock(g_scheduler_list_lock);
-		for (uint32_t i = 0u; i < MAX_SCHEDULERS; ++i) {
-			if (g_scheduler_list[i] == &scheduler) {
-				g_scheduler_list[i] = nullptr;
-				return;
-			}
-		}
-		throw std::runtime_error("Could not find scheduler in global list");
-	}
-#else
 #define INVALID_SCHEDULER nullptr
-#endif
 
 	// Task
 
@@ -532,11 +480,7 @@ namespace anvil {
 
 	void Task::SetException(std::exception_ptr exception) {
 #if ANVIL_TASK_HAS_EXCEPTIONS
-	#if ANVIL_TASK_MEMORY_OPTIMISED
-		_exception_flag = 1u;
-	#else
 		_exception = exception;
-	#endif
 #endif
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Caught exception in task %task% on thread %thread%");
@@ -638,18 +582,11 @@ namespace anvil {
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
-#if ANVIL_TASK_MEMORY_OPTIMISED 
-		if (_exception_flag) {
-			_exception_flag = 0u;
-			throw std::runtime_error("anvil::Task::Yield : An exception was caught during execution");
-		}
-#else
 		if (_exception) {
 			std::exception_ptr tmp = _exception;
 			_exception = std::exception_ptr();
 			std::rethrow_exception(tmp);
 		}
-#endif
 #endif
 	}
 
@@ -689,12 +626,7 @@ HANDLE_ERROR:
 	}
 
 	Scheduler* Task::_GetScheduler() const throw() {
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		if (_scheduler == INVALID_SCHEDULER) return nullptr;
-		return g_scheduler_list[_scheduler];
-#else
 		return _scheduler;
-#endif
 	}
 
 	void Task::Execute() throw() {
@@ -951,9 +883,6 @@ APPEND_TIME:
 		_no_execution_on_wait(false)
 #endif
 	{
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		AddScheduler(*this);
-#endif
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been created on thread %thread%");
 #endif
@@ -961,9 +890,6 @@ APPEND_TIME:
 
 	Scheduler::~Scheduler() {
 		//! \bug Scheduled tasks are left in an undefined state
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		RemoveScheduler(*this);
-#endif
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been destroyed on thread %thread%");
 #endif
@@ -1122,11 +1048,7 @@ APPEND_TIME:
 	}
 
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		const auto this_scheduler = GetSchedulerIndex(*this);
-#else
 		const auto this_scheduler = this;
-#endif
 
 #if ANVIL_TASK_PARENT
 		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
@@ -1151,12 +1073,23 @@ APPEND_TIME:
 			// Initialise scheduling data
 			t._scheduler = this_scheduler;
 
-#if ANVIL_TASK_HAS_EXCEPTIONS
-#if ANVIL_TASK_MEMORY_OPTIMISED
-			t._exception_flag = 0u;
-#else
-			t._exception = std::exception_ptr();
+			// Calculate extended priority
+#if ANVIL_TASK_EXTENDED_PRIORITY
+			try {
+				t._priority.extended = t.CalculateExtendedPriorty();
+			} catch (std::exception& e) {
+				t.SetException(std::current_exception());
+				t.Cancel();
+				continue;
+			} catch (...) {
+				t.SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
+				t.Cancel();
+				continue;
+			}
 #endif
+
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			t._exception = std::exception_ptr();
 #endif
 
 #if ANVIL_TASK_PARENT

@@ -31,16 +31,8 @@
 	#define ANVIL_TASK_EXTENDED_PRIORITY 0
 #endif
 
-#ifndef ANVIL_TASK_EXTENDED_PRIORITY2
-	#define ANVIL_TASK_EXTENDED_PRIORITY2 0
-#endif
-
 #ifndef ANVIL_TASK_HAS_EXCEPTIONS
 	#define ANVIL_TASK_HAS_EXCEPTIONS 0
-#endif
-
-#ifndef ANVIL_TASK_MEMORY_OPTIMISED
-	#define ANVIL_TASK_MEMORY_OPTIMISED 0
 #endif
 
 #ifndef ANVIL_NO_EXECUTE_ON_WAIT
@@ -52,11 +44,7 @@
 #endif
 
 #ifndef ANVIL_TASK_PARENT
-	#if ANVIL_TASK_MEMORY_OPTIMISED
-		#define ANVIL_TASK_PARENT 0
-	#else
-		#define ANVIL_TASK_PARENT 1
-	#endif
+	#define ANVIL_TASK_PARENT 1
 #endif
 
 #ifndef ANVIL_TASK_DELAY_SCHEDULING
@@ -68,17 +56,6 @@
 #endif
 
 // Check for invalid exension options
-
-#if ANVIL_TASK_EXTENDED_PRIORITY2
-	#undef ANVIL_TASK_EXTENDED_PRIORITY
-	#define ANVIL_TASK_EXTENDED_PRIORITY 1
-#endif
-
-#if ANVIL_TASK_MEMORY_OPTIMISED
-	#if ANVIL_TASK_EXTENDED_PRIORITY
-		#error ANVIL_TASK_EXTENDED_PRIORITY is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
-	#endif
-#endif
 
 // Early definition of the main classes in this library
 

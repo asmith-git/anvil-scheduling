@@ -66,6 +66,8 @@ namespace anvil {
 		};
 
 		typedef Scheduler::Priority Priority;
+		typedef Scheduler::PriorityInteger PriorityInteger;
+		typedef Scheduler::PriorityValue PriorityValue;
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
@@ -93,12 +95,10 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
 #endif
-#if ANVIL_TASK_MEMORY_OPTIMISED == 0
-		std::atomic_uint32_t _wait_flag;
+		std::atomic_uint16_t _wait_flag;
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
-#endif
 #endif
 
 #if ANVIL_DEBUG_TASKS
@@ -109,18 +109,8 @@ namespace anvil {
 		Task* _parent;
 #endif
 
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		struct {
-			uint32_t _scheduler : 8u;
-			uint32_t _priority : 4u;		//!< Stores the scheduling priority of the task
-			uint32_t _state : 4u;		//!< Stores the current state of the task
-			uint32_t _wait_flag : 1u;
-			uint32_t _exception_flag : 1u;
-		};
-#else
-		Priority _priority;				//!< Stores the scheduling priority of the task
+		PriorityValue _priority;		//!< Stores the scheduling priority of the task
 		State _state;					//!< Stores the current state of the task
-#endif
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
@@ -163,6 +153,10 @@ namespace anvil {
 			\see Cancel
 		*/
 		virtual void OnCancel() = 0;
+#endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		virtual PriorityInteger CalculateExtendedPriorty() const = 0;
 #endif
 
 #if ANVIL_TASK_DELAY_SCHEDULING
