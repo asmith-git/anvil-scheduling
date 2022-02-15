@@ -146,9 +146,11 @@ namespace anvil {
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
 			//!< Cycle though the tasks in order
-			if (_task_counter >= _tasks.size()) _task_counter = 0u;
-			if (!_tasks.empty()) {
-				if(SwitchToTask(*_tasks[_task_counter++], false)) return true;
+			uint32_t tasks_tried = 0u;
+			while (tasks_tried < _tasks.size()) {
+				if (_task_counter >= _tasks.size()) _task_counter = 0u;
+				if (SwitchToTask(*_tasks[_task_counter++], false)) return true;
+				++tasks_tried;
 			}
 
 			// Switch to the main thread fiber instead
