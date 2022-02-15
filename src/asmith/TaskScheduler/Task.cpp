@@ -897,6 +897,8 @@ APPEND_TIME:
 					}
 				};
 
+				Scheduler& scheduler = task.GetScheduler();
+
 				// If an error hasn't been detected yet
 				if (task._state != Task::STATE_CANCELED) {
 
@@ -919,8 +921,6 @@ APPEND_TIME:
 		#if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(&task, nullptr, "Task %task% finishes execution on thread %thread% after " + std::to_string(GetDebugTime() - task._debug_timer) + " milliseconds");
 		#endif
-				// Wake waiting threads
-				//if (task._scheduler) task._scheduler->TaskQueueNotify(); //! \bug Scheduler set to null before this executes
 
 				try {
 					g_thread_local_data.OnTaskExecuteEnd(task);
@@ -933,6 +933,8 @@ APPEND_TIME:
 				}
 
 				task._wait_flag = 1;
+
+				scheduler.TaskQueueNotify();
 			}
 
 			// Return control to the main thread
