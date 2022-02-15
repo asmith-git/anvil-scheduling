@@ -28,6 +28,7 @@
 #include <string>
 #include <atomic>
 #include <algorithm>
+#include <list>
 #include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
@@ -65,26 +66,26 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
 #endif
-		std::vector<std::shared_ptr<FiberData>> _fibers;
-		std::vector<std::shared_ptr<TaskThreadLocalData>> _tasks;
+		std::list<FiberData> _fibers;
+		std::list<TaskThreadLocalData> _tasks;
 		TaskThreadLocalData* _current_task;
 		uint32_t _task_counter;
 
 		FiberData* AllocateFiber() {
 			// For for an unused fiber
-			for (std::shared_ptr<FiberData>& fiber : _fibers) {
-				if (fiber->task == nullptr) {
-					return fiber.get();
+			for (FiberData& fiber : _fibers) {
+				if (fiber.task == nullptr) {
+					return &fiber;
 				}
 			}
 
 			// Allocate a new fiber
-			std::shared_ptr<FiberData> fiber(new FiberData);
+			_fibers.push_back(std::move(FiberData()));
+			FiberData* fiber = &_fibers.back();
 #if ANVIL_TASK_FIBERS
-			fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber.get());
+			fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber);
 #endif
-			_fibers.push_back(fiber);
-			return fiber.get();
+			return fiber;
 		}
 
 		void DeallocateFiber(FiberData* fiber) {
@@ -103,17 +104,17 @@ namespace anvil {
 		{
 #if ANVIL_TASK_FIBERS
 			_fiber = ConvertThreadToFiber(nullptr);
-			_tasks.reserve(100);
 #endif
 		}
 
 		~_TaskThreadLocalData() {
 #if ANVIL_TASK_FIBERS
 			// Delete old fibers
-			for (std::shared_ptr<FiberData>& fiber : _fibers) {
-				DeleteFiber(fiber->fiber);
+			for (FiberData& fiber : _fibers) {
+				DeleteFiber(fiber.fiber);
 			}
 #endif
+			_fibers.clear();
 		}
 
 		void SwitchToMainFiber() {
@@ -145,12 +146,23 @@ namespace anvil {
 		}
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
-			//!< Cycle though the tasks in order
+			// Cycle though the tasks in order
 			uint32_t tasks_tried = 0u;
-			while (tasks_tried < _tasks.size()) {
-				if (_task_counter >= _tasks.size()) _task_counter = 0u;
-				if (SwitchToTask(*_tasks[_task_counter++], false)) return true;
+			auto i = _tasks.begin();
+			if (_task_counter >= _tasks.size()) _task_counter = 0u;
+			for (uint32_t j = 0; j < _task_counter; ++j) ++i;
+
+			const uint32_t size = _tasks.size();
+			while (tasks_tried < size) {
+				if (_task_counter >= size) {
+					_task_counter = 0u;
+					i = _tasks.begin();
+				}
+
+				++_task_counter;
+				if (SwitchToTask(*i, false)) return true;
 				++tasks_tried;
+				++i;
 			}
 
 			// Switch to the main thread fiber instead
@@ -160,9 +172,9 @@ namespace anvil {
 #endif
 
 		inline void OnTaskExecuteBegin(Task& task) {
-			std::shared_ptr<TaskThreadLocalData> data(new TaskThreadLocalData);
+			_tasks.push_back(TaskThreadLocalData());
+			TaskThreadLocalData* data = &_tasks.back();
 			data->task = &task;
-			_tasks.push_back(data);
 
 #if ANVIL_TASK_FIBERS
 			FiberData* fiber = AllocateFiber();
@@ -177,15 +189,15 @@ namespace anvil {
 			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
 #endif
 			auto end = _tasks.end();
-			auto i = std::find_if(_tasks.begin(), end, [&task](const std::shared_ptr<TaskThreadLocalData>& data)->bool {
-				return data->task == &task;
+			auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
+				return data.task == &task;
 			});
 			if (i != end) _tasks.erase(i);
 
 #if ANVIL_TASK_FIBERS
-			for (std::shared_ptr<FiberData>& fiber : _fibers) {
-				if (fiber->fiber == task._fiber) {
-					DeallocateFiber(fiber.get());
+			for (FiberData& fiber : _fibers) {
+				if (fiber.fiber == task._fiber) {
+					DeallocateFiber(&fiber);
 					break;
 				}
 			}
@@ -198,15 +210,20 @@ namespace anvil {
 		}
 
 		TaskThreadLocalData* GetTaskData(Task& task) {
-			for (std::shared_ptr<TaskThreadLocalData>& data : _tasks) {
-				if (data->task == &task) return data.get();
+			for (TaskThreadLocalData& data : _tasks) {
+				if (data.task == &task) return &data;
 			}
 
 			return nullptr;
 		}
 
 		inline TaskThreadLocalData* GetTaskData(size_t index) {
-			return _tasks.data()[index].get();
+			auto i = _tasks.begin();
+			while (index > 0) {
+				--index;
+				++i;
+			}
+			return &*i;
 		}
 
 		inline uint32_t GetNumberOfTasks() const {
