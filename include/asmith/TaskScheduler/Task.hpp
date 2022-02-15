@@ -95,7 +95,6 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
 #endif
-		std::atomic_uint16_t _wait_flag;
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
@@ -110,6 +109,7 @@ namespace anvil {
 #endif
 
 		PriorityValue _priority;		//!< Stores the scheduling priority of the task
+		std::atomic_uint16_t _wait_flag;
 		State _state;					//!< Stores the current state of the task
 	protected:
 		/*!
@@ -272,6 +272,10 @@ namespace anvil {
 		static void SetDebugStream(std::ostream&);
 #endif
 
+	};
+
+	enum {
+		TASK_SIZE = sizeof(Task)
 	};
 	
 	/*!
