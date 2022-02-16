@@ -51,7 +51,7 @@ namespace anvil {
 		- ANVIL_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
-	class ANVIL_DLL_EXPORT Task {
+	class ANVIL_DLL_EXPORT Task : public std::enable_shared_from_this<Task> {
 	public:
 		/*!
 			\brief Describes which point in the execution cycle a Task is in.
@@ -105,7 +105,7 @@ namespace anvil {
 #endif
 
 #if ANVIL_TASK_PARENT
-		Task* _parent;
+		std::shared_ptr<Task> _parent;
 #endif
 
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
@@ -225,7 +225,7 @@ namespace anvil {
 		/*!
 			\return The parent of this task or null if there is no known parent
 		*/
-		Task* GetParent() const throw();
+		std::shared_ptr<Task> GetParent() const throw();
 
 		/*!
 			\return The number of child tasks
@@ -256,14 +256,14 @@ namespace anvil {
 			\brief Return the Task that is currently executing on this thread.
 			\details Returns nullptr if there is no task executing on this thread.
 		*/
-		static Task* GetCurrentlyExecutingTask();
+		static std::shared_ptr<Task> GetCurrentlyExecutingTask();
 
 		/*!
 			\brief Return a Task that is executing on this thread.
 			\param Index the index in the execution stack, 0u is the first Task that started executing.
 			\see GetNumberOfTasksExecutingOnThisThread()
 		*/
-		static Task* GetCurrentlyExecutingTask(size_t index);
+		static std::shared_ptr<Task> GetCurrentlyExecutingTask(size_t index);
 
 		/*!
 			\brief Return the number of Tasks that are currently executing on this thread.
