@@ -228,14 +228,9 @@ namespace anvil {
 		std::shared_ptr<Task> GetParent() const throw();
 
 		/*!
-			\return The number of child tasks
+			\return The a children of this task
 		*/
-		size_t GetChildCount() const throw();
-
-		/*!
-			\return The a child of this task or null if there is no known child
-		*/
-		Task* GetChild(size_t i) const throw();
+		std::vector<std::shared_ptr<Task>> GetChildren() const throw();
 
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)

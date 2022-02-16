@@ -258,14 +258,14 @@ namespace anvil {
 			if (i != end) _tasks.erase(i);
 		}
 
-		std::vector<Task*> FindChildren(const Task& p) {
-			std::vector<Task*> children;
+		std::vector<std::shared_ptr<Task>> FindChildren(const Task& p) {
+			std::vector<std::shared_ptr<Task>> children;
 
 			{
 				std::lock_guard<std::mutex> lock(_lock);
 				for (Task* c : _tasks) {
 					if (c->GetParent().get() == &p) {
-						children.push_back(c);
+						children.push_back(c->shared_from_this());
 					}
 				}
 			}
@@ -744,19 +744,12 @@ APPEND_TIME:
 		return nullptr;
 	}
 
-	size_t Task::GetChildCount() const throw() {
+	std::vector<std::shared_ptr<Task>> Task::GetChildren() const throw() {
 #if ANVIL_TASK_PARENT
-		return g_task_manager.FindChildren(*this).size(); //! \todo Optimise so that children are not search multiple times
+		return g_task_manager.FindChildren(*this);
 #endif
-		return 0u;
+		return std::vector<std::shared_ptr<Task>>();
 
-	}
-	Task* Task::GetChild(size_t i) const throw() {
-#if ANVIL_TASK_PARENT
-		std::vector<Task*> children = g_task_manager.FindChildren(*this); //! \todo Optimise so that children are not search multiple times
-		if (i < children.size()) children.data()[i];
-#endif
-		return nullptr;
 	}
 
 	size_t Task::GetNestingDepth() const throw() {
