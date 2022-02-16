@@ -105,6 +105,7 @@ namespace anvil {
 #endif
 
 #if ANVIL_TASK_PARENT
+		std::vector<std::weak_ptr<Task>> _children;
 		std::shared_ptr<Task> _parent;
 #endif
 

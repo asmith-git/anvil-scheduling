@@ -241,41 +241,6 @@ namespace anvil {
 
 	thread_local _TaskThreadLocalData g_thread_local_data;
 
-	class _GlobalTaskManager {
-	private:
-		std::vector<Task*> _tasks;
-		std::mutex _lock;
-	public:
-		void OnTaskCreated(Task& t) {
-			std::lock_guard<std::mutex> lock(_lock);
-			_tasks.push_back(&t);
-		}
-
-		void OnTaskDestroyed(Task& t) {
-			std::lock_guard<std::mutex> lock(_lock);
-			auto end = _tasks.end();
-			auto i = std::find(_tasks.begin(), end, &t);
-			if (i != end) _tasks.erase(i);
-		}
-
-		std::vector<std::shared_ptr<Task>> FindChildren(const Task& p) {
-			std::vector<std::shared_ptr<Task>> children;
-
-			{
-				std::lock_guard<std::mutex> lock(_lock);
-				for (Task* c : _tasks) {
-					if (c->GetParent().get() == &p) {
-						children.push_back(c->shared_from_this());
-					}
-				}
-			}
-
-			return children;
-		}
-	};
-
-	static _GlobalTaskManager g_task_manager;
-
 #if ANVIL_USE_NEST_COUNTER
 	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
 #endif
@@ -424,14 +389,12 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is created on thread %thread%");
 #endif
-		g_task_manager.OnTaskCreated(*this);
 	}
 
 	Task::~Task() {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
 #endif
-		g_task_manager.OnTaskDestroyed(*this);
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
@@ -745,10 +708,14 @@ APPEND_TIME:
 	}
 
 	std::vector<std::shared_ptr<Task>> Task::GetChildren() const throw() {
+		std::vector<std::shared_ptr<Task>> children;
 #if ANVIL_TASK_PARENT
-		return g_task_manager.FindChildren(*this);
+		for (const std::weak_ptr<Task>& t : _children) {
+			std::shared_ptr<Task> t2 = t.lock();
+			if (t2) children.push_back(std::move(t2));
+		}
 #endif
-		return std::vector<std::shared_ptr<Task>>();
+		return children;
 
 	}
 
@@ -1080,6 +1047,9 @@ APPEND_TIME:
 
 #if ANVIL_TASK_PARENT
 			t._parent = parent;
+			if (parent) {
+				parent->_children.push_back(tasks[i]);
+			}
 #endif
 
 			// Calculate extended priority
