@@ -1073,6 +1073,14 @@ APPEND_TIME:
 			// Initialise scheduling data
 			t._scheduler = this_scheduler;
 
+#if ANVIL_TASK_HAS_EXCEPTIONS
+			t._exception = std::exception_ptr();
+#endif
+
+#if ANVIL_TASK_PARENT
+			t._parent = parent;
+#endif
+
 			// Calculate extended priority
 #if ANVIL_TASK_EXTENDED_PRIORITY
 			try {
@@ -1086,14 +1094,6 @@ APPEND_TIME:
 				t.Cancel();
 				continue;
 			}
-#endif
-
-#if ANVIL_TASK_HAS_EXCEPTIONS
-			t._exception = std::exception_ptr();
-#endif
-
-#if ANVIL_TASK_PARENT
-			t._parent = parent;
 #endif
 
 #if ANVIL_TASK_CALLBACKS
