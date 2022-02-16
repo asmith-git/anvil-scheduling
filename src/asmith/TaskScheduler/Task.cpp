@@ -131,6 +131,8 @@ namespace anvil {
 
 #if ANVIL_TASK_FIBERS
 		bool SwitchToTask(TaskThreadLocalData& task, bool switch_to_main_on_failure) {
+			if (&task == _current_task) return false;
+
 			// If the task is able to execute
 			if (task.yield_condition == nullptr || (*task.yield_condition)()) {
 				_current_task = &task;
@@ -192,7 +194,13 @@ namespace anvil {
 			auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
 				return data.task == &task;
 			});
-			if (i != end) _tasks.erase(i);
+			if (i != end) {
+				if (_tasks.size() == 1u) {
+					_tasks.clear();
+				} else {
+					_tasks.erase(i);
+				}
+			}
 
 #if ANVIL_TASK_FIBERS
 			for (FiberData& fiber : _fibers) {
