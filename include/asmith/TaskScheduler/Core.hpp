@@ -25,6 +25,12 @@
 
 #include <cstdint>
 
+// Protection from conflicting definitions in common headers
+
+#ifdef Yield // Windows.h
+	#undef Yield
+#endif
+
 // Define default options
 
 #ifndef ANVIL_TASK_EXTENDED_PRIORITY
