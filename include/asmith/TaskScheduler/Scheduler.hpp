@@ -65,7 +65,6 @@ namespace anvil {
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
-		void RegisterAsWorkerThread();
 
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
@@ -147,6 +146,8 @@ namespace anvil {
 
 		Scheduler();
 		virtual ~Scheduler();
+
+		void RegisterAsWorkerThread();
 
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 

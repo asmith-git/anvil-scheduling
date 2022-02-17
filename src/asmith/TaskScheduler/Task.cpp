@@ -1005,11 +1005,18 @@ APPEND_TIME:
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
 #endif
 				std::unique_lock<std::mutex> lock(_mutex);
+
+
+				const bool is_nested_on_worker_thread = g_thread_local_data.is_worker_thread && data != nullptr;
+				if (is_nested_on_worker_thread) --_threads_executing;
+
 				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 					_task_queue_update.wait(lock);
 				} else {
 					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 				}
+
+				if (is_nested_on_worker_thread) ++_threads_executing;
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
 #endif

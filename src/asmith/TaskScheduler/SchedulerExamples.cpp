@@ -47,8 +47,10 @@ namespace anvil {
 		_scheduler.PrintDebugMessage("Scheduler %scheduler% launching new thread");
 #endif
 		_comm_flag = COMM_EXECUTE;
-		_thread = std::thread(
-			[this]()->void {
+		_thread = std::thread([this]()->void {
+
+			_scheduler.RegisterAsWorkerThread();
+
 			while (true) {
 				switch (_comm_flag) {
 				case COMM_DISABLED:
