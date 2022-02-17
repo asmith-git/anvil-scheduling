@@ -60,9 +60,12 @@ namespace anvil {
 	protected:
 		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
+		std::atomic_int32_t _thread_count;
+		std::atomic_int32_t _threads_executing;
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
+		void RegisterAsWorkerThread();
 
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
@@ -187,6 +190,20 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
 #endif
+		/*!
+			\brief Return the number of threads that are currently not executing tasks.
+		*/
+		inline uint32_t GetSleepingThreadCount() const throw() { return static_cast<uint32_t>(_thread_count - _threads_executing); }
+
+		/*!
+			\brief Return the number of threads that are currently executing tasks.
+		*/
+		inline uint32_t GetExecutingThreadCount() const throw() { return static_cast<uint32_t>(_threads_executing); }
+
+		/*!
+			\brief Return the total number of threads.
+		*/
+		inline uint32_t GetThreadCount() const throw() { return static_cast<uint32_t>(_thread_count); }
 	};
 }
 

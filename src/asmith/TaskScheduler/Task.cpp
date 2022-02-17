@@ -94,13 +94,15 @@ namespace anvil {
 #endif
 		}
 	public:
+		bool is_worker_thread;
 
 		_TaskThreadLocalData() :
 #if ANVIL_TASK_FIBERS
 			_fiber(nullptr),
 #endif
 			_current_task(nullptr),
-			_task_counter(0u)
+			_task_counter(0u),
+			is_worker_thread(false)
 		{
 #if ANVIL_TASK_FIBERS
 			_fiber = ConvertThreadToFiber(nullptr);
@@ -845,11 +847,10 @@ APPEND_TIME:
 	// Scheduler
 
 	Scheduler::Scheduler() :
-#if ANVIL_NO_EXECUTE_ON_WAIT
-		_no_execution_on_wait(true)
-#else
-		_no_execution_on_wait(false)
-#endif
+		_no_execution_on_wait(ANVIL_NO_EXECUTE_ON_WAIT ? true : false),
+		_thread_count(0),
+		_threads_executing(0)
+
 	{
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been created on thread %thread%");
@@ -972,8 +973,17 @@ APPEND_TIME:
 		if (task == nullptr) return false;
 
 		// Execute the task
+		const bool is_worker_thread = g_thread_local_data.is_worker_thread;
+		if (is_worker_thread) ++_threads_executing;
 		task->Execute();
+		if (is_worker_thread) --_threads_executing;
+
 		return true;
+	}
+
+
+	void Scheduler::RegisterAsWorkerThread() {
+		g_thread_local_data.is_worker_thread = true;
 	}
 
 	void Scheduler::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
@@ -981,6 +991,7 @@ APPEND_TIME:
 
 		// If this function is being called by a task
 		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
+
 		if (data) {
 			data->yield_condition = &condition;
 		}
@@ -988,7 +999,7 @@ APPEND_TIME:
 		// While the condition is not met
 		while (!condition()) {
 			// Try to execute a scheduled task
-			if (! TryToExecuteTask()) {
+			if (!TryToExecuteTask()) {
 				// If no task was able to be executed then block until there is a queue update
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");

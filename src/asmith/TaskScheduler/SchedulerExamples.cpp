@@ -140,6 +140,8 @@ namespace anvil {
 	{}
 
 	ExampleSchedulerMultiThreaded::ExampleSchedulerMultiThreaded(size_t count) {
+		_thread_count = static_cast<int32_t>(count);
+
 		for (size_t i = 0u; i < count; ++i) {
 			std::shared_ptr<ExampleThread> thread(new ExampleThread(*this));
 			thread->Start();
