@@ -697,7 +697,7 @@ APPEND_TIME:
 		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this), false);
 #else
 		FiberData data;
-		data.task = this;
+		data.task = this->shared_from_this();
 		FiberFunction(&data);
 #endif
 	}
