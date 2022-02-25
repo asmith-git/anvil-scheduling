@@ -20,6 +20,8 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+// For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
+
 #ifndef ANVIL_SCHEDULER_SCHEDULER_EXAMPLE_HPP
 #define ANVIL_SCHEDULER_SCHEDULER_EXAMPLE_HPP
 
@@ -33,7 +35,7 @@ namespace anvil {
 
 	class ExampleScheduler;
 
-	class ExampleThread {
+	class ANVIL_DLL_EXPORT ExampleThread {
 	private:
 		enum : uint32_t {
 			COMM_DISABLED,
@@ -60,7 +62,7 @@ namespace anvil {
 
 	typedef Scheduler ExampleSchedulerUnthreaded;
 
-	class ExampleScheduler : public Scheduler {
+	class ANVIL_DLL_EXPORT ExampleScheduler : public Scheduler {
 	public:
 		friend ExampleThread; // Allow ExampleThread to access thread synchronisation helpers
 
@@ -68,7 +70,7 @@ namespace anvil {
 		virtual ~ExampleScheduler();
 	};
 
-	class ExampleSchedulerSingleThreaded : public ExampleScheduler {
+	class ANVIL_DLL_EXPORT ExampleSchedulerSingleThreaded : public ExampleScheduler {
 	private:
 		ExampleThread _thread;
 	public:
@@ -76,7 +78,7 @@ namespace anvil {
 		virtual ~ExampleSchedulerSingleThreaded();
 	};
 
-	class ExampleSchedulerMultiThreaded final : public ExampleScheduler {
+	class ANVIL_DLL_EXPORT ExampleSchedulerMultiThreaded final : public ExampleScheduler {
 	private:
 		std::vector<std::shared_ptr<ExampleThread>> _threads;
 	public:

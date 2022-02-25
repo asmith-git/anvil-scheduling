@@ -20,6 +20,8 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+// For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
+
 #ifndef ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
 #define ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
 
@@ -40,7 +42,7 @@ namespace anvil {
 			\see TaskFunctional
 		*/
 		template<class F>
-		class TaskFunctional_NoReturn final : public Task {
+		class ANVIL_DLL_EXPORT TaskFunctional_NoReturn final : public Task {
 		public:
 			typedef F Function;
 		private:
@@ -66,6 +68,13 @@ namespace anvil {
 
 			}
 #endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+			PriorityInteger CalculateExtendedPriorty() const final {
+				return 0u;
+			}
+#endif
+
 #if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;
@@ -109,7 +118,7 @@ namespace anvil {
 			\see TaskFunctional
 		*/
 		template<class R, class F>
-		class TaskFunctional_Return final : public TaskWithReturn<R> {
+		class ANVIL_DLL_EXPORT TaskFunctional_Return final : public TaskWithReturn<R> {
 		public:
 			typedef F Function;
 		private:
@@ -135,6 +144,13 @@ namespace anvil {
 
 			}
 #endif
+
+#if ANVIL_TASK_EXTENDED_PRIORITY
+			Task::PriorityInteger CalculateExtendedPriorty() const final {
+				return 0u;
+			}
+#endif
+
 #if ANVIL_TASK_DELAY_SCHEDULING
 			bool IsReadyToExecute() const throw() final {
 				return true;

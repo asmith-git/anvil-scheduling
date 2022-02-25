@@ -20,10 +20,18 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+// For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
+
 #ifndef ANVIL_SCHEDULER_CORE_HPP
 #define ANVIL_SCHEDULER_CORE_HPP
 
 #include <cstdint>
+
+// Protection from conflicting definitions in common headers
+
+#ifdef Yield // Windows.h
+	#undef Yield
+#endif
 
 // Define default options
 
@@ -31,16 +39,8 @@
 	#define ANVIL_TASK_EXTENDED_PRIORITY 0
 #endif
 
-#ifndef ANVIL_TASK_EXTENDED_PRIORITY2
-	#define ANVIL_TASK_EXTENDED_PRIORITY2 0
-#endif
-
 #ifndef ANVIL_TASK_HAS_EXCEPTIONS
 	#define ANVIL_TASK_HAS_EXCEPTIONS 0
-#endif
-
-#ifndef ANVIL_TASK_MEMORY_OPTIMISED
-	#define ANVIL_TASK_MEMORY_OPTIMISED 0
 #endif
 
 #ifndef ANVIL_NO_EXECUTE_ON_WAIT
@@ -52,37 +52,18 @@
 #endif
 
 #ifndef ANVIL_TASK_PARENT
-	#if ANVIL_TASK_MEMORY_OPTIMISED
-		#define ANVIL_TASK_PARENT 0
-	#else
-		#define ANVIL_TASK_PARENT 1
-	#endif
+	#define ANVIL_TASK_PARENT 1
 #endif
 
 #ifndef ANVIL_TASK_DELAY_SCHEDULING
 	#define ANVIL_TASK_DELAY_SCHEDULING 0
 #endif
 
-// Define derived options
-
-#if ANVIL_TASK_MEMORY_OPTIMISED
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 1
-#else
-	#define ANVIL_TASK_GLOBAL_SCHEDULER_LIST 0
-#endif 
+#ifndef ANVIL_DLL_EXPORT
+#define  ANVIL_DLL_EXPORT __declspec(dllimport)
+#endif
 
 // Check for invalid exension options
-
-#if ANVIL_TASK_EXTENDED_PRIORITY2
-	#undef ANVIL_TASK_EXTENDED_PRIORITY
-	#define ANVIL_TASK_EXTENDED_PRIORITY 1
-#endif
-
-#if ANVIL_TASK_MEMORY_OPTIMISED
-	#if ANVIL_TASK_EXTENDED_PRIORITY
-		#error ANVIL_TASK_EXTENDED_PRIORITY is incompatible with ANVIL_TASK_MEMORY_OPTIMISED
-	#endif
-#endif
 
 // Early definition of the main classes in this library
 

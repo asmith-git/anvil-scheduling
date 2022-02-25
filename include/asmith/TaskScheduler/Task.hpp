@@ -20,16 +20,23 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+// For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
+
 #ifndef ANVIL_SCHEDULER_TASK_HPP
 #define ANVIL_SCHEDULER_TASK_HPP
 
 #if ANVIL_DEBUG_TASKS
 #include <iostream>
 #endif
+#include <atomic>
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
-#define ANVIL_TASK_RUNTIME_DATA ANVIL_TASK_PARENT
+#if ANVIL_TASK_FIBERS
+	#define NOMINMAX
+	#include <windows.h>
+	#undef Yield
+#endif
 
 namespace anvil {
 
@@ -46,7 +53,7 @@ namespace anvil {
 		- ANVIL_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
-	class Task {
+	class ANVIL_DLL_EXPORT Task : public std::enable_shared_from_this<Task> {
 	public:
 		/*!
 			\brief Describes which point in the execution cycle a Task is in.
@@ -61,19 +68,18 @@ namespace anvil {
 		};
 
 		typedef Scheduler::Priority Priority;
+		typedef Scheduler::PriorityInteger PriorityInteger;
+		typedef Scheduler::PriorityValue PriorityValue;
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
 		Task& operator=(Task&&) = delete;
-		Task& operator=(const Task&) = delete;
+		Task& operator=(const Task&) = delete; 
 
-#if ANVIL_TASK_RUNTIME_DATA
-		struct RuntimeData {
-#if ANVIL_TASK_PARENT
-			Task* parent;
-			std::vector<Task*> children;
-#endif
-		}; //!< Data needed while a task is executing
+#if ANVIL_TASK_FIBERS
+		static void WINAPI FiberFunction(LPVOID param);
+#else
+		static void FiberFunction(void* param);
 #endif
 
 		/*!
@@ -86,33 +92,28 @@ namespace anvil {
 		*/
 		void Execute() throw();
 
+		void SetException(std::exception_ptr exception);
+
+#if ANVIL_TASK_FIBERS
+		LPVOID _fiber;
+#endif
+		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
+#if ANVIL_TASK_HAS_EXCEPTIONS
+		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
+#endif
+
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;
 #endif
 
-#if ANVIL_TASK_GLOBAL_SCHEDULER_LIST
-		uint8_t _scheduler;		//!< Remembers which scheduler this task is attached to, otherwise 255
-#else
-		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
+#if ANVIL_TASK_PARENT
+		std::vector<std::weak_ptr<Task>> _children;
+		std::shared_ptr<Task> _parent;
 #endif
 
-#if ANVIL_TASK_RUNTIME_DATA
-		RuntimeData* _runtime_data;
-#endif
-
-#if ANVIL_TASK_HAS_EXCEPTIONS
-	std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
-#endif
-
-#if ANVIL_TASK_MEMORY_OPTIMISED
-		struct {
-			uint8_t _priority : 4u;		//!< Stores the scheduling priority of the task
-			uint8_t _state : 4u;		//!< Stores the current state of the task
-		};
-#else
-		Priority _priority;				//!< Stores the scheduling priority of the task
-		State _state;					//!< Stores the current state of the task
-#endif
+		PriorityValue _priority;			//!< Stores the scheduling priority of the task
+		std::atomic_uint16_t _wait_flag;	//!< Set to 1 when it is okay to exit out of Task::Wait()
+		State _state;						//!< Stores the current state of the task
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
@@ -157,11 +158,20 @@ namespace anvil {
 		virtual void OnCancel() = 0;
 #endif
 
+#if ANVIL_TASK_EXTENDED_PRIORITY
+		/*!
+			\brief Decide which order tasks scheduled with the same priority will execute
+			\return Tasks returning a higher value will execute first
+		*/
+		virtual PriorityInteger CalculateExtendedPriorty() const = 0;
+#endif
+
 #if ANVIL_TASK_DELAY_SCHEDULING
 		virtual bool IsReadyToExecute() const throw() = 0;
 #endif
 	public:
 		friend Scheduler;
+		friend class _TaskThreadLocalData;
 
 		/*!
 			\brief Create a new task.
@@ -218,17 +228,12 @@ namespace anvil {
 		/*!
 			\return The parent of this task or null if there is no known parent
 		*/
-		Task* GetParent() const throw();
+		std::shared_ptr<Task> GetParent() const throw();
 
 		/*!
-			\return The number of child tasks
+			\return The a children of this task
 		*/
-		size_t GetChildCount() const throw();
-
-		/*!
-			\return The a child of this task or null if there is no known child
-		*/
-		Task* GetChild(size_t i) const throw();
+		std::vector<std::shared_ptr<Task>> GetChildren() const throw();
 
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)
@@ -249,14 +254,14 @@ namespace anvil {
 			\brief Return the Task that is currently executing on this thread.
 			\details Returns nullptr if there is no task executing on this thread.
 		*/
-		static Task* GetCurrentlyExecutingTask();
+		static std::shared_ptr<Task> GetCurrentlyExecutingTask();
 
 		/*!
 			\brief Return a Task that is executing on this thread.
 			\param Index the index in the execution stack, 0u is the first Task that started executing.
 			\see GetNumberOfTasksExecutingOnThisThread()
 		*/
-		static Task* GetCurrentlyExecutingTask(size_t index);
+		static std::shared_ptr<Task> GetCurrentlyExecutingTask(size_t index);
 
 		/*!
 			\brief Return the number of Tasks that are currently executing on this thread.
@@ -270,7 +275,7 @@ namespace anvil {
 #endif
 
 	};
-	
+
 	/*!
 		\class Task
 		\author Adam G. Smith
@@ -281,7 +286,7 @@ namespace anvil {
 		\see Task
 	*/
 	template<class R>
-	class TaskWithReturn : public Task {
+	class ANVIL_DLL_EXPORT TaskWithReturn : public Task {
 	public:
 		typedef R Result;
 	private:
