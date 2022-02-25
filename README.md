@@ -2,26 +2,6 @@
 This C++ library provides code for scheduling and parallel execution of tasks.
 This is an improved version of my older [multithread-task](https://github.com/asmith-git/multithread-task) project, which itself is a port of the task management system in a game engine I wrote a number of years ago.
 
-## Extensions
-This library has some optional features that can be enabled with compiler constants:
-#### ANVIL_TASK_FIBERS
-Executes each task in a fiber (coroutine). This offers greater flexibility in yielding conditions as multiple tasks can be executed in 'parallel' on the same thread instead of using a stack based method.
-This is currently only implemented for Windows
-#### ANVIL_TASK_DELAY_SCHEDULING
-This adds the virtual IsReadyToExecute() function to Task, which will prevent a Task from being executed until this returns true. This can be useful for holding tasks in the scheduler until some resource becomes available.
-#### ANVIL_TASK_CALLBACKS
-Adds the virtual functions OnScheduled(), OnBlock(), OnResume() and OnCancel() functions to task. These are called when the state of the task is about to be changed, which is usefull for debugging or monitoring the status of the scheduler.
-#### ANVIL_TASK_HAS_EXCEPTIONS
-Allows tasks to throw exceptions when executing, which will be caught and rethrown by Wait()
-#### ANVIL_TASK_EXTENDED_PRIORITY
-Adds the GetExtendedPriority() function, this allows for custom behaviour to decide the order in which tasks with equal priority are executed.
-ANVIL_TASK_EXTENDED_PRIORITY should be defined as 0 to disable this feature, otherwise it should be a value between 1 and 63. This number determines how many bits are used for the extended priority data. 
-The value is rounded up to the nearest integer size and the remaining bits are used for the regular priorty value.
-#### ANVIL_NO_EXECUTE_ON_WAIT
-Wait() will put the thread to sleep instead of calling Yield(). This should be used when you don't want tasks executing on a particular thread.
-#### ANVIL_DEBUG_TASKS
-Log information about task scheduling and execution for debugging purposes.
-
 
 ## Usage Examples
 ### Creating a Task
@@ -106,3 +86,27 @@ int main{
 	}
 }
 ```
+
+## Sequence of Operations
+### With Two Worker Threads
+![Example2Threads](/doc/normal_task_sequence.png)
+
+## Extensions
+This library has some optional features that can be enabled with compiler constants:
+#### ANVIL_TASK_FIBERS
+Executes each task in a fiber (coroutine). This offers greater flexibility in yielding conditions as multiple tasks can be executed in 'parallel' on the same thread instead of using a stack based method.
+This is currently only implemented for Windows
+#### ANVIL_TASK_DELAY_SCHEDULING
+This adds the virtual IsReadyToExecute() function to Task, which will prevent a Task from being executed until this returns true. This can be useful for holding tasks in the scheduler until some resource becomes available.
+#### ANVIL_TASK_CALLBACKS
+Adds the virtual functions OnScheduled(), OnBlock(), OnResume() and OnCancel() functions to task. These are called when the state of the task is about to be changed, which is usefull for debugging or monitoring the status of the scheduler.
+#### ANVIL_TASK_HAS_EXCEPTIONS
+Allows tasks to throw exceptions when executing, which will be caught and rethrown by Wait()
+#### ANVIL_TASK_EXTENDED_PRIORITY
+Adds the GetExtendedPriority() function, this allows for custom behaviour to decide the order in which tasks with equal priority are executed.
+ANVIL_TASK_EXTENDED_PRIORITY should be defined as 0 to disable this feature, otherwise it should be a value between 1 and 63. This number determines how many bits are used for the extended priority data. 
+The value is rounded up to the nearest integer size and the remaining bits are used for the regular priorty value.
+#### ANVIL_NO_EXECUTE_ON_WAIT
+Wait() will put the thread to sleep instead of calling Yield(). This should be used when you don't want tasks executing on a particular thread.
+#### ANVIL_DEBUG_TASKS
+Log information about task scheduling and execution for debugging purposes.
