@@ -20,6 +20,8 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+// For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
+
 #ifndef ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
 #define ANVIL_SCHEDULER_TASK_FUNCTIONAL_HPP
 
