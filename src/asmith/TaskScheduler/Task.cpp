@@ -71,7 +71,6 @@ namespace anvil {
 		std::list<FiberData> _fibers;
 		std::list<TaskThreadLocalData> _tasks;
 		TaskThreadLocalData* _current_task;
-		uint32_t _task_counter;
 
 		FiberData* AllocateFiber() {
 			// For for an unused fiber
@@ -103,7 +102,6 @@ namespace anvil {
 			_fiber(nullptr),
 #endif
 			_current_task(nullptr),
-			_task_counter(0u),
 			is_worker_thread(false)
 		{
 #if ANVIL_TASK_FIBERS
@@ -127,7 +125,6 @@ namespace anvil {
 
 			// Switch to it
 #if ANVIL_TASK_FIBERS
-			_task_counter = 0u;
 			_current_task = nullptr;
 			SwitchToFiber(_fiber);
 #endif
@@ -152,23 +149,20 @@ namespace anvil {
 		}
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
-			// Cycle though the tasks in order
-			uint32_t tasks_tried = 0u;
-			auto i = _tasks.begin();
-			if (_task_counter >= _tasks.size()) _task_counter = 0u;
-			for (uint32_t j = 0; j < _task_counter; ++j) ++i;
+			// Copy list of available tasks
+			std::vector<TaskThreadLocalData*> tasks;
+			for (TaskThreadLocalData& t : _tasks) tasks.push_back(&t);
 
-			const uint32_t size = _tasks.size();
-			while (tasks_tried < size) {
-				if (_task_counter >= size) {
-					_task_counter = 0u;
-					i = _tasks.begin();
-				}
+			// Sort tasks by priority
+			std::sort(tasks.begin(), tasks.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
+				return lhs->task->_priority < rhs->task->_priority;
+			});
 
-				++_task_counter;
-				if (SwitchToTask(*i, false)) return true;
-				++tasks_tried;
-				++i;
+			while (!tasks.empty()) {
+				TaskThreadLocalData* t = tasks.back();
+				tasks.pop_back();
+
+				if (SwitchToTask(*t, false)) return true;
 			}
 
 			// Switch to the main thread fiber instead
