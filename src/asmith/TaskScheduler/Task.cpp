@@ -70,6 +70,7 @@ namespace anvil {
 #endif
 		std::list<FiberData> _fibers;
 		std::list<TaskThreadLocalData> _tasks;
+		std::vector<TaskThreadLocalData*> _switch_to_any_buffer;
 		TaskThreadLocalData* _current_task;
 
 		FiberData* AllocateFiber() {
@@ -150,23 +151,25 @@ namespace anvil {
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
 			// Copy list of available tasks
-			std::vector<TaskThreadLocalData*> tasks;
-			for (TaskThreadLocalData& t : _tasks) tasks.push_back(&t);
+			_switch_to_any_buffer.clear();
+			if (! _tasks.empty()) {
+				for (TaskThreadLocalData& t : _tasks) _switch_to_any_buffer.push_back(&t);
 
-			// Sort tasks by priority
-			std::sort(tasks.begin(), tasks.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
-				return lhs->task->_priority < rhs->task->_priority;
-			});
+				// Sort tasks by priority
+				std::sort(_switch_to_any_buffer.begin(), _switch_to_any_buffer.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
+					return lhs->task->_priority < rhs->task->_priority;
+				});
 
-			while (!tasks.empty()) {
-				TaskThreadLocalData* t = tasks.back();
-				tasks.pop_back();
-
-				if (SwitchToTask(*t, false)) return true;
+				// Try to execute a task that is ready to resume
+				for (int i = 0; i < 5; ++i) {
+					for (TaskThreadLocalData* t : _switch_to_any_buffer) {
+						if (SwitchToTask(*t, false)) return true;
+					}
+				}
 			}
 
 			// Switch to the main thread fiber instead
-			if(switch_to_main_on_failure) SwitchToMainFiber();
+			if (switch_to_main_on_failure) SwitchToMainFiber();
 			return false;
 		}
 #endif
@@ -986,8 +989,21 @@ APPEND_TIME:
 
 		// While the condition is not met
 		while (!condition()) {
+			bool executed_task = false;
+
+			// Try to execute a task for 1 ms
+			uint64_t execution_timer = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			do {
+				for (int i = 0; i < 100; ++i) {
+					executed_task = TryToExecuteTask();
+					if (executed_task) goto EXIT_TIMER;
+				}
+				if (condition()) goto EXIT_CONDITION;
+			} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < 1000000u);
+EXIT_TIMER:
+
 			// Try to execute a scheduled task
-			if (!TryToExecuteTask()) {
+			if (!executed_task) {
 				// If no task was able to be executed then block until there is a queue update
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
@@ -1010,6 +1026,7 @@ APPEND_TIME:
 #endif
 			}
 		}
+EXIT_CONDITION:
 
 		// If this function is being called by a task
 		if (data) {
