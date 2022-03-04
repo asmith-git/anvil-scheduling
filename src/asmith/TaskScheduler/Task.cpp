@@ -417,39 +417,12 @@ namespace anvil {
 	}
 
 	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
-		if (_state != STATE_EXECUTING) throw std::runtime_error("Task cannot yeild unless it is in STATE_EXECUTING");
-
-		if (condition()) return;
-
-#if ANVIL_TASK_CALLBACKS
-		OnBlock();
-#endif
-
-#if ANVIL_DEBUG_TASKS
-		const float debug_time = GetDebugTime();
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
-#endif
-
-		_state = STATE_BLOCKED;
-		try {
-			_GetScheduler()->Yield(condition, max_sleep_milliseconds);
-		} catch (std::exception& e) {
-			_state = STATE_EXECUTING;
-			std::rethrow_exception(std::current_exception());
-		} catch (...) {
-			_state = STATE_EXECUTING;
-			throw std::runtime_error("Thrown value was not a C++ exception");
+		Scheduler* scheduler = _scheduler;
+		if (scheduler) {
+			scheduler->Yield(condition, max_sleep_milliseconds);
+		} else {
+			throw std::runtime_error("anvil::Task::Yield : Cannot yield without a scheduler");
 		}
-		
-		_state = STATE_EXECUTING;
-
-#if ANVIL_DEBUG_TASKS
-		anvil::PrintDebugMessage(this, nullptr, "Task %task% resumed execution on thread %thread% after being paused for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
-#endif
-
-#if ANVIL_TASK_CALLBACKS
-		OnResume();
-#endif
 	}
 
 
@@ -989,12 +962,31 @@ APPEND_TIME:
 	}
 
 	void Scheduler::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
+		// If the condition is already met then avoid the overheads of suspending the thread / task
+		if (condition()) return;
+
 		max_sleep_milliseconds = std::max(1u, max_sleep_milliseconds);
 
 		// If this function is being called by a task
 		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
-
+#if ANVIL_DEBUG_TASKS
+		const float debug_time = GetDebugTime();
+#endif
 		if (data) {
+			Task& t = *data->task;
+
+			// State change
+			if (t._state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
+			t._state = Task::STATE_BLOCKED;
+#if ANVIL_TASK_CALLBACKS
+			t.OnBlock();
+#endif
+#if ANVIL_DEBUG_TASKS
+			anvil::PrintDebugMessage(&t, nullptr, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
+#endif
+
+
+			// Remember how the task should be resumed
 			data->yield_condition = &condition;
 		}
 
@@ -1026,7 +1018,22 @@ APPEND_TIME:
 		}
 
 		// If this function is being called by a task
-		if (data) data->yield_condition = nullptr;
+		if (data) {
+			Task& t = *data->task;
+
+			// The task can no longer be resumed
+			data->yield_condition = nullptr;
+
+			// State change
+			t._state = Task::STATE_EXECUTING;
+#if ANVIL_DEBUG_TASKS
+			anvil::PrintDebugMessage(&t, nullptr, "Task %task% resumed execution on thread %thread% after being paused for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
+#endif
+
+#if ANVIL_TASK_CALLBACKS
+			t.OnResume();
+#endif
+		}
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
