@@ -988,19 +988,33 @@ APPEND_TIME:
 		}
 
 		// While the condition is not met
-		while (!condition()) {
+		while (true) {
+			// Check the yield condition has been met yet
 			bool executed_task = false;
+			if (condition()) {
+EXIT_CONDITION:
+				break;
+			}
 
 			// Try to execute a task for 1 ms
 			uint64_t execution_timer = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 			do {
 				for (int i = 0; i < 100; ++i) {
 					executed_task = TryToExecuteTask();
-					if (executed_task) goto EXIT_TIMER;
+					if (executed_task) break;
 				}
-				if (condition()) goto EXIT_CONDITION;
+
+				if (executed_task) {
+					break;
+				} else {
+					// Check the yield condition has been met yet
+					if (condition()) goto EXIT_CONDITION;
+				}
+
 			} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < 1000000u);
-EXIT_TIMER:
+
+			// Check the yield condition has been met yet
+			if (condition()) goto EXIT_CONDITION;
 
 			// Try to execute a scheduled task
 			if (!executed_task) {
@@ -1026,7 +1040,6 @@ EXIT_TIMER:
 #endif
 			}
 		}
-EXIT_CONDITION:
 
 		// If this function is being called by a task
 		if (data) {
