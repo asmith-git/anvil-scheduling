@@ -960,16 +960,17 @@ APPEND_TIME:
 		// Try to start the execution of a new task
 		std::shared_ptr<Task> task = RemoveNextTaskFromQueue();
 
-		// If there isn't a task available then return
-		if (task == nullptr) return false;
+		// If there is a task available then execute it
+		if (task) {
+			const bool is_worker_thread = g_thread_local_data.is_worker_thread;
+			if (is_worker_thread) ++_threads_executing;
+			task->Execute();
+			if (is_worker_thread) --_threads_executing;
 
-		// Execute the task
-		const bool is_worker_thread = g_thread_local_data.is_worker_thread;
-		if (is_worker_thread) ++_threads_executing;
-		task->Execute();
-		if (is_worker_thread) --_threads_executing;
+			return true;
+		}
 
-		return true;
+		return false;
 	}
 
 
@@ -1009,31 +1010,27 @@ APPEND_TIME:
 		// While the condition is not met
 		while (true) {
 			// Check the yield condition has been met yet
-			bool executed_task = false;
 			if (condition()) {
 EXIT_CONDITION:
 				break;
 			}
 
-			// Try to execute a task for 1 ms
+			// Try to execute a task for a short ammount of time
+			bool executed_task = false;
 			uint64_t execution_timer = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			enum { 
+				SPIN_ON_TRY_EXECUTION = 1000000u / 10 // 1/10th of a ms
+			};
 			do {
-				for (int i = 0; i < 100; ++i) {
-					executed_task = TryToExecuteTask();
-					if (executed_task) break;
-				}
+				executed_task = TryToExecuteTask();
+				if (executed_task) break;
 
-				if (executed_task) {
-					break;
-				} else {
-					// Check the yield condition has been met yet
-					if (condition()) goto EXIT_CONDITION;
-				}
+				// Check the yield condition has been met yet
+				if (condition()) goto EXIT_CONDITION;
 
-			} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < 1000000u);
+				if (executed_task) break;
 
-			// Check the yield condition has been met yet
-			if (condition()) goto EXIT_CONDITION;
+			} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < SPIN_ON_TRY_EXECUTION);
 
 			// Try to execute a scheduled task
 			if (!executed_task) {
