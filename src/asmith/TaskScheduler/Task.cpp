@@ -891,22 +891,18 @@ APPEND_TIME:
 	}
 
 	std::shared_ptr<Task> Scheduler::RemoveNextTaskFromQueue() throw() {
-
+#if ANVIL_TASK_DELAY_SCHEDULING
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
-#if ANVIL_TASK_DELAY_SCHEDULING
 		if (_task_queue.empty()) {
 			// If there are no active tasks, check if an innactive one has now become ready
-			if (_unready_task_queue.empty()) return false;
+			if (_unready_task_queue.empty()) return std::shared_ptr<Task>();
 
 			std::lock_guard<std::mutex> lock(_mutex);
 			CheckUnreadyTasks();
 
-			if (_task_queue.empty()) return false;
+			if (_task_queue.empty()) return std::shared_ptr<Task>();
 		}
-#else
-		if (_task_queue.empty()) return false;
-#endif
 
 		std::shared_ptr<Task> task = nullptr;
 		bool notify = false;
@@ -916,7 +912,7 @@ APPEND_TIME:
 
 			while (task == nullptr) {
 				// Check again that another thread hasn't emptied the queue while locking
-				if (_task_queue.empty()) return false;
+				if (_task_queue.empty()) return std::shared_ptr<Task>();
 
 				// Remove the task at the back of the queue
 				task = _task_queue.back();
@@ -942,6 +938,27 @@ APPEND_TIME:
 
 		// Return the task if one was found
 		return task;
+#else
+		std::shared_ptr<Task> task;
+
+		// Check if there are tasks before locking the queue
+		// Avoids overhead of locking during periods of low activity
+		if (_task_queue.empty()) return task;
+
+		{
+			// Acquire the queue lock
+			std::lock_guard<std::mutex> lock(_mutex);
+
+			// Check again that another thread hasn't emptied the queue while locking
+			if (_task_queue.empty()) return task;
+
+			// Remove the last task in the queue
+			task = std::move(_task_queue.back());
+			_task_queue.pop_back();
+		}
+
+		return task;
+#endif
 	}
 
 	bool Scheduler::TryToExecuteTask() throw() {
