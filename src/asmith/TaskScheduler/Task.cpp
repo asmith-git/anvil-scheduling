@@ -132,7 +132,7 @@ namespace anvil {
 		}
 
 #if ANVIL_TASK_FIBERS
-		bool SwitchToTask(TaskThreadLocalData& task, bool switch_to_main_on_failure) {
+		bool SwitchToTask(TaskThreadLocalData& task) {
 			if (&task == _current_task) return false;
 
 			// If the task is able to execute
@@ -142,25 +142,15 @@ namespace anvil {
 				return true;
 			}
 
-			if (switch_to_main_on_failure) {
-				// Switch to the main thread fiber instead
-				SwitchToMainFiber();
-			}
 			return false;
 		}
 
-		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
-			// Copy list of available tasks
-			if (!_tasks_by_priority.empty()) {
-
-				// Try to execute a task that is ready to resume
-				for (TaskThreadLocalData* t : _tasks_by_priority) {
-					if (SwitchToTask(*t, false)) return true;
-				}
+		bool SwitchToAnyTask() {
+			// Try to execute a task that is ready to resume
+			for (TaskThreadLocalData* t : _tasks_by_priority) {
+				if (SwitchToTask(*t)) return true;
 			}
 
-			// Switch to the main thread fiber instead
-			if (switch_to_main_on_failure) SwitchToMainFiber();
 			return false;
 		}
 #endif
@@ -678,7 +668,7 @@ APPEND_TIME:
 
 		// Switch control to the task's fiber
 #if ANVIL_TASK_FIBERS
-		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this), false);
+		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this));
 #else
 		FiberData data;
 		data.task = this->shared_from_this();
@@ -964,7 +954,7 @@ APPEND_TIME:
 	bool Scheduler::TryToExecuteTask() throw() {
 #if ANVIL_TASK_FIBERS
 		// Try to resume execution of an existing task
-		if(g_thread_local_data.SwitchToAnyTask(false)) return true;
+		if(g_thread_local_data.SwitchToAnyTask()) return true;
 #endif
 
 		// Try to start the execution of a new task
