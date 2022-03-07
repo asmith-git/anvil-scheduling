@@ -70,7 +70,7 @@ namespace anvil {
 #endif
 		std::list<FiberData> _fibers;
 		std::list<TaskThreadLocalData> _tasks;
-		std::vector<TaskThreadLocalData*> _switch_to_any_buffer;
+		std::vector<TaskThreadLocalData*> _tasks_by_priority;
 		TaskThreadLocalData* _current_task;
 
 		FiberData* AllocateFiber() {
@@ -151,20 +151,11 @@ namespace anvil {
 
 		bool SwitchToAnyTask(bool switch_to_main_on_failure) {
 			// Copy list of available tasks
-			_switch_to_any_buffer.clear();
-			if (! _tasks.empty()) {
-				for (TaskThreadLocalData& t : _tasks) _switch_to_any_buffer.push_back(&t);
-
-				// Sort tasks by priority
-				std::sort(_switch_to_any_buffer.begin(), _switch_to_any_buffer.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
-					return lhs->task->_priority < rhs->task->_priority;
-				});
+			if (!_tasks_by_priority.empty()) {
 
 				// Try to execute a task that is ready to resume
-				for (int i = 0; i < 5; ++i) {
-					for (TaskThreadLocalData* t : _switch_to_any_buffer) {
-						if (SwitchToTask(*t, false)) return true;
-					}
+				for (TaskThreadLocalData* t : _tasks_by_priority) {
+					if (SwitchToTask(*t, false)) return true;
 				}
 			}
 
@@ -178,6 +169,12 @@ namespace anvil {
 			_tasks.push_back(TaskThreadLocalData());
 			TaskThreadLocalData* data = &_tasks.back();
 			data->task = task.shared_from_this();
+			_tasks_by_priority.push_back(data);
+
+			// Sort tasks by priority
+			std::sort(_tasks_by_priority.begin(), _tasks_by_priority.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
+				return lhs->task->_priority < rhs->task->_priority;
+			});
 
 #if ANVIL_TASK_FIBERS
 			FiberData* fiber = AllocateFiber();
@@ -191,15 +188,30 @@ namespace anvil {
 			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
 			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
 #endif
-			auto end = _tasks.end();
-			auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
-				return data.task.get() == &task;
-			});
-			if (i != end) {
-				if (_tasks.size() == 1u) {
-					_tasks.clear();
-				} else {
-					_tasks.erase(i);
+			{
+				auto end = _tasks_by_priority.end();
+				auto i = std::find_if(_tasks_by_priority.begin(), end, [&task](const TaskThreadLocalData* data)->bool {
+					return data->task.get() == &task;
+				});
+				if (i != end) {
+					if (_tasks_by_priority.size() == 1u) {
+						_tasks_by_priority.clear();
+					} else {
+						_tasks_by_priority.erase(i);
+					}
+				}
+			}
+			{
+				auto end = _tasks.end();
+				auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
+					return data.task.get() == &task;
+				});
+				if (i != end) {
+					if (_tasks.size() == 1u) {
+						_tasks.clear();
+					} else {
+						_tasks.erase(i);
+					}
 				}
 			}
 
