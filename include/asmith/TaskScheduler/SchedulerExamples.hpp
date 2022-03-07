@@ -78,7 +78,7 @@ namespace anvil {
 		virtual ~ExampleSchedulerSingleThreaded();
 	};
 
-	class ANVIL_DLL_EXPORT ExampleSchedulerMultiThreaded final : public ExampleScheduler {
+	class ANVIL_DLL_EXPORT ExampleSchedulerMultiThreaded : public ExampleScheduler {
 	private:
 		std::vector<std::shared_ptr<ExampleThread>> _threads;
 	public:
