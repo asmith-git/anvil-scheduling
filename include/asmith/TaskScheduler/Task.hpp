@@ -236,6 +236,12 @@ namespace anvil {
 		std::vector<std::shared_ptr<Task>> GetChildren() const throw();
 
 		/*!
+			\param aproximate If true then count will include children that previously existed but have since been destroyed (this is faster)
+			\return The number of children this task has
+		*/
+		size_t GetChildCount(bool aproximate = false) const throw();
+
+		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)
 		*/
 		size_t GetNestingDepth() const throw();

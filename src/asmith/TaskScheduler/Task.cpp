@@ -692,7 +692,19 @@ APPEND_TIME:
 		}
 #endif
 		return children;
+	}
 
+	size_t Task::GetChildCount(bool aproximate) const throw() {
+		if (aproximate) {
+			return _children.size();
+		} else {
+			size_t count = 0u;
+			for (const std::weak_ptr<Task>& t : _children) {
+				std::shared_ptr<Task> t2 = t.lock();
+				if (t2) ++count;
+			}
+			return count;
+		}
 	}
 
 	size_t Task::GetNestingDepth() const throw() {
