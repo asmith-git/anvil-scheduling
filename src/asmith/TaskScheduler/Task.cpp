@@ -237,7 +237,7 @@ namespace anvil {
 			return &*i;
 		}
 
-		inline uint32_t GetNumberOfTasks() const {
+		inline size_t GetNumberOfTasks() const {
 			return _tasks.size();
 		}
 	};
@@ -473,7 +473,7 @@ namespace anvil {
 			// Call the cancelation callback
 			try {
 				OnCancel();
-			} catch (std::exception& e) {
+			} catch (std::exception&) {
 				SetException(std::current_exception());
 			} catch (...) {
 				SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
@@ -1089,7 +1089,7 @@ EXIT_CONDITION:
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
-		std::sort(_task_queue.begin(), _task_queue.end(), [](const std::shared_ptr<Task>& const lhs, const std::shared_ptr<Task>& const rhs)->bool {
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const std::shared_ptr<Task>& lhs, const std::shared_ptr<Task>& rhs)->bool {
 			return lhs->_priority < rhs->_priority;
 		});
 	}
