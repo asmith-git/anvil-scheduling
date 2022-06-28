@@ -999,7 +999,7 @@ APPEND_TIME:
 
 		{
 			std::unique_lock<std::mutex> lock(_mutex);
-			local_data.scheduler_index = ++_thread_count;
+			local_data.scheduler_index = _thread_count++;
 			ThreadDebugData& debug_data = _thread_debug_data[local_data.scheduler_index];
 			debug_data.tasks_executing = 0u;
 			debug_data.sleeping = 0u;
