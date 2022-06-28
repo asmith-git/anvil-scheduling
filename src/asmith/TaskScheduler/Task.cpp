@@ -835,11 +835,16 @@ APPEND_TIME:
 	// Scheduler
 
 	Scheduler::Scheduler(size_t thread_count) :
-		_thread_debug_data(thread_count == 0u ? nullptr : new ThreadDebugData[thread_count]),
-		_no_execution_on_wait(ANVIL_NO_EXECUTE_ON_WAIT ? true : false),
-		_thread_count(0u)
+		_no_execution_on_wait(ANVIL_NO_EXECUTE_ON_WAIT ? true : false)
 
 	{
+		_scheduler_debug.thread_debug_data = thread_count == 0u ? nullptr : new ThreadDebugData[thread_count];
+		_scheduler_debug.total_thread_count = 0u;
+		_scheduler_debug.executing_thread_count = 0u;
+		_scheduler_debug.sleeping_thread_count = 0u;
+		_scheduler_debug.total_tasks_executing = 0u;
+		_scheduler_debug.total_tasks_queued = 0u;
+
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been created on thread %thread%");
 #endif
@@ -850,9 +855,9 @@ APPEND_TIME:
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been destroyed on thread %thread%");
 #endif
-		if (_thread_debug_data) {
-			delete[] _thread_debug_data;
-			_thread_debug_data = nullptr;
+		if (_scheduler_debug.thread_debug_data) {
+			delete[] _scheduler_debug.thread_debug_data;
+			_scheduler_debug.thread_debug_data = nullptr;
 		}
 	}
 
@@ -982,9 +987,17 @@ APPEND_TIME:
 		if (task) {
 			_TaskThreadLocalData& local_data = g_thread_local_data;
 			ThreadDebugData* debug_data = GetDebugDataForThread(local_data.scheduler_index);
-			if (debug_data) ++debug_data->tasks_executing;
+			if (debug_data) {
+				++debug_data->tasks_executing;
+				++_scheduler_debug.total_tasks_executing;
+			}
+
 			task->Execute();
-			if (debug_data) --debug_data->tasks_executing;
+
+			if (debug_data) {
+				--debug_data->tasks_executing;
+				--_scheduler_debug.total_tasks_executing;
+			}
 
 			return true;
 		}
@@ -999,11 +1012,12 @@ APPEND_TIME:
 
 		{
 			std::unique_lock<std::mutex> lock(_mutex);
-			local_data.scheduler_index = _thread_count++;
-			ThreadDebugData& debug_data = _thread_debug_data[local_data.scheduler_index];
+			local_data.scheduler_index = _scheduler_debug.total_thread_count++;
+			ThreadDebugData& debug_data = _scheduler_debug.thread_debug_data[local_data.scheduler_index];
 			debug_data.tasks_executing = 0u;
 			debug_data.sleeping = 0u;
 			debug_data.enabled = 1u;
+			++_scheduler_debug.executing_thread_count; // Default state is executing
 		}
 	}
 
@@ -1077,7 +1091,10 @@ EXIT_CONDITION:
 
 
 				const bool is_nested_on_worker_thread = g_thread_local_data.is_worker_thread && data != nullptr;
-				if (debug_data) debug_data->sleeping = 1u;
+				if (debug_data) {
+					debug_data->sleeping = 1u;
+					--_scheduler_debug.executing_thread_count;
+				}
 
 				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 					_task_queue_update.wait(lock);
@@ -1085,7 +1102,11 @@ EXIT_CONDITION:
 					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 				}
 
-				if (debug_data) debug_data->sleeping = 0u;
+				if (debug_data) {
+					debug_data->sleeping = 0u;
+					++_scheduler_debug.executing_thread_count;
+				}
+
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
 #endif
@@ -1250,21 +1271,13 @@ EXIT_CONDITION:
 		return g_thread_local_data.scheduler_index;
 	}
 
-	Scheduler::ThreadDebugData* Scheduler::GetDebugDataForThisThread() {
-		return GetDebugDataForThread(GetThisThreadIndex());
-	}
-
 	Scheduler::ThreadDebugData* Scheduler::GetDebugDataForThread(const uint32_t index) {
-		return index > _thread_count ? nullptr : _thread_debug_data + index;
+		return index > _scheduler_debug.total_thread_count ? nullptr : _scheduler_debug.thread_debug_data + index;
 	}
 
-	size_t Scheduler::GetExecutingThreadCount() const throw() {
-		const size_t s = GetThreadCount();
-		size_t count = 0u;
-		for (size_t i = 0u; i < s; ++i) {
-			const ThreadDebugData& debug_data = *const_cast<Scheduler*>(this)->GetDebugDataForThread(static_cast<uint32_t>(i));
-			if (debug_data.tasks_executing > 0) ++count;
-		}
-		return count;
+	Scheduler::SchedulerDebugData& Scheduler::GetDebugData() {
+		_scheduler_debug.sleeping_thread_count = _scheduler_debug.total_thread_count - _scheduler_debug.executing_thread_count;
+		_scheduler_debug.total_tasks_queued = _task_queue.size();
+		return _scheduler_debug;
 	}
 }

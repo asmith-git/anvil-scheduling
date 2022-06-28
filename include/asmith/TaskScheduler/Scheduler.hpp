@@ -41,6 +41,15 @@ namespace anvil {
 			std::atomic_uint32_t sleeping;
 			std::atomic_uint32_t enabled;
 		};
+
+		struct SchedulerDebugData {
+			ThreadDebugData* thread_debug_data;
+			std::atomic_uint32_t total_thread_count;
+			std::atomic_uint32_t executing_thread_count;
+			std::atomic_uint32_t sleeping_thread_count;
+			std::atomic_uint32_t total_tasks_executing;
+			std::atomic_uint32_t total_tasks_queued;
+		};
 	private:
 		Scheduler(Scheduler&&) = delete;
 		Scheduler(const Scheduler&) = delete;
@@ -66,10 +75,9 @@ namespace anvil {
 		void CheckUnreadyTasks();
 #endif
 	protected:
-		ThreadDebugData* _thread_debug_data;
+		SchedulerDebugData _scheduler_debug;
 		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
-		std::atomic_int32_t _thread_count;
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
@@ -199,25 +207,27 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
 #endif
-		ThreadDebugData* GetDebugDataForThisThread();
-		ThreadDebugData* GetDebugDataForThread(const uint32_t index);
 
 		uint32_t GetThisThreadIndex() const;
+		ThreadDebugData* GetDebugDataForThread(const uint32_t index);
+		inline ThreadDebugData* GetDebugDataForThisThread() { return GetDebugDataForThread(GetThisThreadIndex()); }
+		SchedulerDebugData& GetDebugData();
+
 
 		/*!
 			\brief Return the total number of threads.
 		*/
-		inline size_t GetThreadCount() const throw() { return static_cast<uint32_t>(_thread_count); }
+		inline size_t GetThreadCount() const throw() { return const_cast<Scheduler*>(this)->GetDebugData().total_thread_count; }
 
 		/*!
 			\brief Return the number of threads that are currently executing tasks.
 		*/
-		size_t GetExecutingThreadCount() const throw();
+		inline size_t GetExecutingThreadCount() const throw() { return const_cast<Scheduler*>(this)->GetDebugData().executing_thread_count; }
 
 		/*!
 			\brief Return the number of threads that are currently not executing tasks.
 		*/
-		inline size_t GetSleepingThreadCount() const throw() { return _thread_count - GetExecutingThreadCount(); }
+		inline size_t GetSleepingThreadCount() const throw() { return const_cast<Scheduler*>(this)->GetDebugData().sleeping_thread_count; }
 	};
 }
 
