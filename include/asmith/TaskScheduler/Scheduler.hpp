@@ -35,6 +35,12 @@
 namespace anvil {
 
 	class ANVIL_DLL_EXPORT Scheduler {
+	public:
+		struct ThreadDebugData {
+			std::atomic_uint32_t tasks_executing;
+			std::atomic_uint32_t sleeping;
+			std::atomic_uint32_t enabled;
+		};
 	private:
 		Scheduler(Scheduler&&) = delete;
 		Scheduler(const Scheduler&) = delete;
@@ -60,10 +66,10 @@ namespace anvil {
 		void CheckUnreadyTasks();
 #endif
 	protected:
+		ThreadDebugData* _thread_debug_data;
 		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
 		std::atomic_int32_t _thread_count;
-		std::atomic_int32_t _threads_executing;
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
@@ -146,7 +152,7 @@ namespace anvil {
 	public:
 		friend Task;
 
-		Scheduler();
+		Scheduler(size_t thread_count);
 		virtual ~Scheduler();
 
 		void RegisterAsWorkerThread();
@@ -193,20 +199,25 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
 #endif
-		/*!
-			\brief Return the number of threads that are currently not executing tasks.
-		*/
-		inline uint32_t GetSleepingThreadCount() const throw() { return static_cast<uint32_t>(_thread_count - _threads_executing); }
+		ThreadDebugData* GetDebugDataForThisThread();
+		ThreadDebugData* GetDebugDataForThread(const uint32_t index);
 
-		/*!
-			\brief Return the number of threads that are currently executing tasks.
-		*/
-		inline uint32_t GetExecutingThreadCount() const throw() { return static_cast<uint32_t>(_threads_executing); }
+		uint32_t GetThisThreadIndex() const;
 
 		/*!
 			\brief Return the total number of threads.
 		*/
-		inline uint32_t GetThreadCount() const throw() { return static_cast<uint32_t>(_thread_count); }
+		inline size_t GetThreadCount() const throw() { return static_cast<uint32_t>(_thread_count); }
+
+		/*!
+			\brief Return the number of threads that are currently executing tasks.
+		*/
+		size_t GetExecutingThreadCount() const throw();
+
+		/*!
+			\brief Return the number of threads that are currently not executing tasks.
+		*/
+		inline size_t GetSleepingThreadCount() const throw() { return _thread_count - GetExecutingThreadCount(); }
 	};
 }
 

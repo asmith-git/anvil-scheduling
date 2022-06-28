@@ -96,6 +96,7 @@ namespace anvil {
 #endif
 		}
 	public:
+		uint32_t scheduler_index;
 		bool is_worker_thread;
 
 		_TaskThreadLocalData() :
@@ -103,6 +104,7 @@ namespace anvil {
 			_fiber(nullptr),
 #endif
 			_current_task(nullptr),
+			scheduler_index(UINT32_MAX),
 			is_worker_thread(false)
 		{
 #if ANVIL_TASK_FIBERS
@@ -832,10 +834,10 @@ APPEND_TIME:
 
 	// Scheduler
 
-	Scheduler::Scheduler() :
+	Scheduler::Scheduler(size_t thread_count) :
+		_thread_debug_data(thread_count == 0u ? nullptr : new ThreadDebugData[thread_count]),
 		_no_execution_on_wait(ANVIL_NO_EXECUTE_ON_WAIT ? true : false),
-		_thread_count(0),
-		_threads_executing(0)
+		_thread_count(0u)
 
 	{
 #if ANVIL_DEBUG_TASKS
@@ -848,6 +850,10 @@ APPEND_TIME:
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(nullptr, this, "Scheduler %scheduler% has been destroyed on thread %thread%");
 #endif
+		if (_thread_debug_data) {
+			delete[] _thread_debug_data;
+			_thread_debug_data = nullptr;
+		}
 	}
 
 #if ANVIL_TASK_DELAY_SCHEDULING
@@ -974,10 +980,11 @@ APPEND_TIME:
 
 		// If there is a task available then execute it
 		if (task) {
-			const bool is_worker_thread = g_thread_local_data.is_worker_thread;
-			if (is_worker_thread) ++_threads_executing;
+			_TaskThreadLocalData& local_data = g_thread_local_data;
+			ThreadDebugData* debug_data = GetDebugDataForThread(local_data.scheduler_index);
+			if (debug_data) ++debug_data->tasks_executing;
 			task->Execute();
-			if (is_worker_thread) --_threads_executing;
+			if (debug_data) --debug_data->tasks_executing;
 
 			return true;
 		}
@@ -987,7 +994,17 @@ APPEND_TIME:
 
 
 	void Scheduler::RegisterAsWorkerThread() {
-		g_thread_local_data.is_worker_thread = true;
+		_TaskThreadLocalData& local_data = g_thread_local_data;
+		local_data.is_worker_thread = true;
+
+		{
+			std::unique_lock<std::mutex> lock(_mutex);
+			local_data.scheduler_index = ++_thread_count;
+			ThreadDebugData& debug_data = _thread_debug_data[local_data.scheduler_index];
+			debug_data.tasks_executing = 0u;
+			debug_data.sleeping = 0u;
+			debug_data.enabled = 1u;
+		}
 	}
 
 	void Scheduler::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
@@ -998,6 +1015,8 @@ APPEND_TIME:
 
 		// If this function is being called by a task
 		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
+		Scheduler::ThreadDebugData* debug_data = GetDebugDataForThisThread();
+
 #if ANVIL_DEBUG_TASKS
 		const float debug_time = GetDebugTime();
 #endif
@@ -1030,19 +1049,23 @@ EXIT_CONDITION:
 			// Try to execute a task for a short ammount of time
 			bool executed_task = false;
 			uint64_t execution_timer = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-			enum { 
-				SPIN_ON_TRY_EXECUTION = 1000000u / 10 // 1/10th of a ms
-			};
-			do {
-				executed_task = TryToExecuteTask();
-				if (executed_task) break;
 
-				// Check the yield condition has been met yet
-				if (condition()) goto EXIT_CONDITION;
+			if (!(debug_data && debug_data->enabled == 0u)) { // If the thread is enabled
+				enum { 
+					SPIN_ON_TRY_EXECUTION = 1000000u / 10 // 1/10th of a ms 
+				};
 
-				if (executed_task) break;
+				do {
+					executed_task = TryToExecuteTask();
+					if (executed_task) break;
 
-			} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < SPIN_ON_TRY_EXECUTION);
+					// Check the yield condition has been met yet
+					if (condition()) goto EXIT_CONDITION;
+
+					if (executed_task) break;
+
+				} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < SPIN_ON_TRY_EXECUTION);
+			}
 
 			// Try to execute a scheduled task
 			if (!executed_task) {
@@ -1054,7 +1077,7 @@ EXIT_CONDITION:
 
 
 				const bool is_nested_on_worker_thread = g_thread_local_data.is_worker_thread && data != nullptr;
-				if (is_nested_on_worker_thread) --_threads_executing;
+				if (debug_data) debug_data->sleeping = 1u;
 
 				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 					_task_queue_update.wait(lock);
@@ -1062,7 +1085,7 @@ EXIT_CONDITION:
 					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 				}
 
-				if (is_nested_on_worker_thread) ++_threads_executing;
+				if (debug_data) debug_data->sleeping = 0u;
 #if ANVIL_DEBUG_TASKS
 				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
 #endif
@@ -1222,4 +1245,26 @@ EXIT_CONDITION:
 		SortTaskQueue();
 	}
 #endif
+
+	uint32_t Scheduler::GetThisThreadIndex() const {
+		return g_thread_local_data.scheduler_index;
+	}
+
+	Scheduler::ThreadDebugData* Scheduler::GetDebugDataForThisThread() {
+		return GetDebugDataForThread(GetThisThreadIndex());
+	}
+
+	Scheduler::ThreadDebugData* Scheduler::GetDebugDataForThread(const uint32_t index) {
+		return index > _thread_count ? nullptr : _thread_debug_data + index;
+	}
+
+	size_t Scheduler::GetExecutingThreadCount() const throw() {
+		const size_t s = GetThreadCount();
+		size_t count = 0u;
+		for (size_t i = 0u; i < s; ++i) {
+			const ThreadDebugData& debug_data = *const_cast<Scheduler*>(this)->GetDebugDataForThread(static_cast<uint32_t>(i));
+			if (debug_data.tasks_executing > 0) ++count;
+		}
+		return count;
+	}
 }

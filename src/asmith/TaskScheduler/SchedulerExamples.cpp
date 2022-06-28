@@ -117,9 +117,9 @@ namespace anvil {
 
 	// ExampleScheduler
 
-	ExampleScheduler::ExampleScheduler() {
-
-	}
+	ExampleScheduler::ExampleScheduler(size_t thread_count) :
+		Scheduler(thread_count)
+	{}
 
 	ExampleScheduler::~ExampleScheduler() {
 
@@ -128,6 +128,7 @@ namespace anvil {
 	// ExampleSchedulerSingleThreaded
 
 	ExampleSchedulerSingleThreaded::ExampleSchedulerSingleThreaded() :
+		ExampleScheduler(0u),
 		_thread(*this)
 	{
 		_thread.Start();
@@ -143,10 +144,10 @@ namespace anvil {
 		ExampleSchedulerMultiThreaded(4u)
 	{}
 
-	ExampleSchedulerMultiThreaded::ExampleSchedulerMultiThreaded(size_t count) {
-		_thread_count = static_cast<int32_t>(count);
-
-		for (size_t i = 0u; i < count; ++i) {
+	ExampleSchedulerMultiThreaded::ExampleSchedulerMultiThreaded(size_t thread_count) :
+		ExampleScheduler(thread_count)
+	{
+		for (size_t i = 0u; i < thread_count; ++i) {
 			std::shared_ptr<ExampleThread> thread(new ExampleThread(*this));
 			thread->Start();
 			_threads.push_back(thread);

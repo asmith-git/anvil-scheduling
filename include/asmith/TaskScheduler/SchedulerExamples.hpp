@@ -66,7 +66,7 @@ namespace anvil {
 	public:
 		friend ExampleThread; // Allow ExampleThread to access thread synchronisation helpers
 
-		ExampleScheduler();
+		ExampleScheduler(size_t thread_count);
 		virtual ~ExampleScheduler();
 	};
 
