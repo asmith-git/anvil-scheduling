@@ -903,7 +903,7 @@ APPEND_TIME:
 		_task_queue_update.notify_all();
 	}
 
-	std::shared_ptr<Task> Scheduler::RemoveNextTaskFromQueue() throw() {
+	void Scheduler::RemoveNextTaskFromQueue(std::shared_ptr<Task>* tasks, uint32_t& count) throw() {
 #if ANVIL_TASK_DELAY_SCHEDULING
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
@@ -914,7 +914,10 @@ APPEND_TIME:
 			std::lock_guard<std::mutex> lock(_mutex);
 			CheckUnreadyTasks();
 
-			if (_task_queue.empty()) return std::shared_ptr<Task>();
+			if (_task_queue.empty()) {
+				count = 0u;
+				return;
+			}
 		}
 
 		std::shared_ptr<Task> task = nullptr;
@@ -925,7 +928,10 @@ APPEND_TIME:
 
 			while (task == nullptr) {
 				// Check again that another thread hasn't emptied the queue while locking
-				if (_task_queue.empty()) return std::shared_ptr<Task>();
+				if (_task_queue.empty()) {
+					count = 0u;
+					return;
+				}
 
 				// Remove the task at the back of the queue
 				task = _task_queue.back();
@@ -950,27 +956,29 @@ APPEND_TIME:
 		if (notify) TaskQueueNotify();
 
 		// Return the task if one was found
-		return task;
+		tasks[0u].swap(task);
+		count = 1u;
 #else
-		std::shared_ptr<Task> task;
-
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
-		if (_task_queue.empty()) return task;
+		if (_task_queue.empty()) {
+			count = 0u;
+			return;
+		}
 
 		{
 			// Acquire the queue lock
 			std::lock_guard<std::mutex> lock(_mutex);
 
-			// Check again that another thread hasn't emptied the queue while locking
-			if (_task_queue.empty()) return task;
+			// Remove the last task(s) in the queue
+			uint32_t count2 = 0u;
+			while (count2 < count && !_task_queue.empty()) {
+				tasks[count2++].swap(_task_queue.back());
+				_task_queue.pop_back();
+			}
 
-			// Remove the last task in the queue
-			task = std::move(_task_queue.back());
-			_task_queue.pop_back();
+			count = count2;
 		}
-
-		return task;
 #endif
 	}
 
@@ -981,22 +989,29 @@ APPEND_TIME:
 #endif
 
 		// Try to start the execution of a new task
-		std::shared_ptr<Task> task = RemoveNextTaskFromQueue();
+		enum { MAX_TASKS = 32u };
+		std::shared_ptr<Task> tasks[MAX_TASKS];
+		uint32_t task_count = _task_queue.size() / _scheduler_debug.total_thread_count;
+		if (task_count < 1) task_count = 1u;
+		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
+		RemoveNextTaskFromQueue(tasks, task_count);
 
 		// If there is a task available then execute it
-		if (task) {
+		if (task_count > 0) {
 			_TaskThreadLocalData& local_data = g_thread_local_data;
 			ThreadDebugData* debug_data = GetDebugDataForThread(local_data.scheduler_index);
 			if (debug_data) {
-				++debug_data->tasks_executing;
-				++_scheduler_debug.total_tasks_executing;
+				debug_data->tasks_executing += task_count;
+				_scheduler_debug.total_tasks_executing += task_count;
 			}
 
-			task->Execute();
+			for (uint32_t i = 0u; i < task_count; ++i) {
+				tasks[i]->Execute();
+			}
 
 			if (debug_data) {
-				--debug_data->tasks_executing;
-				--_scheduler_debug.total_tasks_executing;
+				debug_data->tasks_executing -= task_count;
+				_scheduler_debug.total_tasks_executing -= task_count;
 			}
 
 			return true;
@@ -1136,22 +1151,22 @@ EXIT_CONDITION:
 
 	void Scheduler::Schedule(std::shared_ptr<Task>* tasks, const uint32_t count) {
 		// Schedule in smaller groups so tasks can start executing as they are scheduled
-		{
-			uint32_t block_size = _task_queue.empty() ? _scheduler_debug.total_thread_count.load() : 256;
+		//{
+		//	uint32_t block_size = _task_queue.empty() ? _scheduler_debug.total_thread_count.load() : 256;
 
-			if (count > block_size) {
-				uint32_t count2 = count;
-				while (count2 > 0) {
-					uint32_t tasks_to_add = count2 < block_size ? count2 : block_size;
-					Schedule(tasks, tasks_to_add);
-					tasks += tasks_to_add;
-					count2 -= tasks_to_add;
+		//	if (count > block_size) {
+		//		uint32_t count2 = count;
+		//		while (count2 > 0) {
+		//			uint32_t tasks_to_add = count2 < block_size ? count2 : block_size;
+		//			Schedule(tasks, tasks_to_add);
+		//			tasks += tasks_to_add;
+		//			count2 -= tasks_to_add;
 
-					block_size = 256;
-				}
-				return;
-			}
-		}
+		//			block_size = 256;
+		//		}
+		//		return;
+		//	}
+		//}
 
 		const auto this_scheduler = this;
 

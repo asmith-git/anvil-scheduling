@@ -62,7 +62,7 @@ namespace anvil {
 		std::vector<std::shared_ptr<Task>> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
 		void SortTaskQueue() throw();
 
-		std::shared_ptr<Task> RemoveNextTaskFromQueue() throw();
+		void RemoveNextTaskFromQueue(std::shared_ptr<Task>* tasks, uint32_t& count) throw();
 
 		/*!
 			\brief Called when a Task has been added or removed from the queue
