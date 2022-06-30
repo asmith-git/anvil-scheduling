@@ -47,6 +47,10 @@
 	#define ANVIL_NO_EXECUTE_ON_WAIT 0
 #endif
 
+#ifndef ANVIL_TASK_CALLBACKS
+	#define ANVIL_TASK_CALLBACKS 0
+#endif
+
 #ifndef ANVIL_DEBUG_TASKS
 	#define ANVIL_DEBUG_TASKS 0
 #endif

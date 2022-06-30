@@ -487,11 +487,11 @@ namespace anvil {
 			_scheduler = INVALID_SCHEDULER;
 		}
 
-		// Notify anythign waiting for changes to the task queue
-		if (notify) scheduler->TaskQueueNotify();
-
 		// Canceled successfully
 		_wait_flag = 1u;
+
+		// Notify anythign waiting for changes to the task queue
+		if (notify) scheduler->TaskQueueNotify();
 		return true;
 	}
 
@@ -1060,56 +1060,52 @@ EXIT_CONDITION:
 				break;
 			}
 
-			// Try to execute a task for a short ammount of time
-			bool executed_task = false;
-			uint64_t execution_timer = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-			if (!(debug_data && debug_data->enabled == 0u)) { // If the thread is enabled
-				enum { 
-					SPIN_ON_TRY_EXECUTION = 1000000u / 10 // 1/10th of a ms 
-				};
-
-				do {
-					executed_task = TryToExecuteTask();
-					if (executed_task) break;
-
+			// If the thread is enabled
+			if (!(debug_data && debug_data->enabled == 0u)) { 
+				// Try to execute a task
+				if (TryToExecuteTask()) {
 					// Check the yield condition has been met yet
 					if (condition()) goto EXIT_CONDITION;
 
-					if (executed_task) break;
-
-				} while (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - execution_timer < SPIN_ON_TRY_EXECUTION);
-			}
-
-			// Try to execute a scheduled task
-			if (!executed_task) {
-				// If no task was able to be executed then block until there is a queue update
-#if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
-#endif
-				std::unique_lock<std::mutex> lock(_mutex);
-
-
-				const bool is_nested_on_worker_thread = g_thread_local_data.is_worker_thread && data != nullptr;
-				if (debug_data) {
-					debug_data->sleeping = 1u;
-					--_scheduler_debug.executing_thread_count;
-				}
-
-				if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
-					_task_queue_update.wait(lock);
 				} else {
-					_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
-				}
+					// Block until there is a queue update
+#if ANVIL_DEBUG_TASKS
+					anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
+#endif
+					// Update that thread is sleeping
+					if (debug_data) {
+						debug_data->sleeping = 1u;
+						--_scheduler_debug.executing_thread_count;
+					}
 
-				if (debug_data) {
-					debug_data->sleeping = 0u;
-					++_scheduler_debug.executing_thread_count;
-				}
+					// Acquire a lock on the scheduler
+					const size_t tasks_queued_before_lock = _task_queue.size();
+					std::unique_lock<std::mutex> lock(_mutex);
+
+					// Check if the condition was met while acquiring the lock
+					if (condition()) goto EXIT_CONDITION;
+
+					// If the number of queued tasks has changed (becuase the lock took time to acquire) 
+					// Then skip over the sleep for this attempt
+					if (_task_queue.size() == tasks_queued_before_lock) {
+						if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
+							_task_queue_update.wait(lock);
+						} else {
+							_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
+						}
+					}
+
+					// Update that the thread is running
+					if (debug_data) {
+						debug_data->sleeping = 0u;
+						++_scheduler_debug.executing_thread_count;
+					}
 
 #if ANVIL_DEBUG_TASKS
-				anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
+					anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
 #endif
+				}
+
 			}
 		}
 
@@ -1139,6 +1135,24 @@ EXIT_CONDITION:
 	}
 
 	void Scheduler::Schedule(std::shared_ptr<Task>* tasks, const uint32_t count) {
+		// Schedule in smaller groups so tasks can start executing as they are scheduled
+		{
+			uint32_t block_size = _task_queue.empty() ? _scheduler_debug.total_thread_count.load() : 256;
+
+			if (count > block_size) {
+				uint32_t count2 = count;
+				while (count2 > 0) {
+					uint32_t tasks_to_add = count2 < block_size ? count2 : block_size;
+					Schedule(tasks, tasks_to_add);
+					tasks += tasks_to_add;
+					count2 -= tasks_to_add;
+
+					block_size = 256;
+				}
+				return;
+			}
+		}
+
 		const auto this_scheduler = this;
 
 #if ANVIL_TASK_PARENT
