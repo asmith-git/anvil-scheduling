@@ -387,10 +387,6 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		_fiber(nullptr),
 #endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
-		_fast_child_count(0u),
-		_fast_recursive_child_count(0u),
-#endif
 		_wait_flag(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
@@ -683,7 +679,7 @@ APPEND_TIME:
 	}
 
 	std::shared_ptr<Task> Task::GetParent() const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_PARENT
 		return _parent;
 #endif
 		return nullptr;
@@ -701,7 +697,6 @@ APPEND_TIME:
 	}
 
 	size_t Task::GetChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT
 		if (aproximate) {
 			return _children.size();
 		} else {
@@ -712,24 +707,6 @@ APPEND_TIME:
 			}
 			return count;
 		}
-#elif ANVIL_TASK_FAST_CHILD_COUNT
-		return _fast_child_count;
-#else
-		return 0u;
-#endif
-	}
-
-	size_t Task::GetRecursiveChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT
-		size_t count = 0;
-		std::vector<std::shared_ptr<Task>> children = GetChildren();
-		for (std::shared_ptr<Task>& child : children) count += child->GetRecursiveChildCount(aproximate);
-		return count + children.size();
-#elif ANVIL_TASK_FAST_CHILD_COUNT
-		return _fast_recursive_child_count;
-#else
-		return 0u;
-#endif
 	}
 
 	size_t Task::GetNestingDepth() const throw() {
@@ -1123,9 +1100,6 @@ EXIT_CONDITION:
 					// Check if the condition was met while acquiring the lock
 					if (condition()) goto EXIT_CONDITION;
 
-					// Check if a task was added while acquiring the lock
-					if (!_task_queue.empty()) continue;
-
 					// If the number of queued tasks has changed (becuase the lock took time to acquire) 
 					// Then skip over the sleep for this attempt
 					if (_task_queue.size() == tasks_queued_before_lock) {
@@ -1196,7 +1170,7 @@ EXIT_CONDITION:
 
 		const auto this_scheduler = this;
 
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_PARENT
 		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
 		std::shared_ptr<Task> const parent = parent_local ? parent_local->task : nullptr;
 #endif
@@ -1223,21 +1197,10 @@ EXIT_CONDITION:
 			t._exception = std::exception_ptr();
 #endif
 
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-			t._parent = parent;
-#endif
 #if ANVIL_TASK_PARENT
-			if (parent) parent->_children.push_back(tasks[i]);
-#endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
+			t._parent = parent;
 			if (parent) {
-				++parent->_fast_child_count;
-
-				std::shared_ptr<anvil::Task> parent2 = parent;
-				while (parent2) {
-					++parent2->_fast_recursive_child_count;
-					parent2 = parent2->_parent;
-				}
+				parent->_children.push_back(tasks[i]);
 			}
 #endif
 

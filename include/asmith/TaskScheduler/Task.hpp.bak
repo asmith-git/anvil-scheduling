@@ -110,11 +110,6 @@ namespace anvil {
 		std::vector<std::weak_ptr<Task>> _children;
 		std::shared_ptr<Task> _parent;
 #endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
-		std::atomic_uint32_t _fast_child_count;
-		std::atomic_uint32_t _fast_recursive_child_count;
-		std::shared_ptr<Task> _parent;
-#endif
 
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
 		std::atomic_uint16_t _wait_flag;	//!< Set to 1 when it is okay to exit out of Task::Wait()
@@ -245,8 +240,6 @@ namespace anvil {
 			\return The number of children this task has
 		*/
 		size_t GetChildCount(bool aproximate = false) const throw();
-
-		size_t GetRecursiveChildCount(bool aproximate = false) const throw();
 
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)
