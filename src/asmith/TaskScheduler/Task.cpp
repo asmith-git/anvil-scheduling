@@ -551,7 +551,7 @@ namespace anvil {
 
 		const auto YieldCondition = [this]()->bool {
 			uint8_t expected = 1u;
-			return _wait_flag.compare_exchange_strong(expected, 0u, std::memory_order_acq_rel);
+			return _wait_flag.compare_exchange_strong(expected, 2u, std::memory_order_acq_rel);
 		};
 
 		if (will_yield) {
