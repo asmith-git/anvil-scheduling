@@ -222,12 +222,6 @@ namespace anvil {
 		bool Cancel() throw();
 
 		/*!
-			\brief Set the state back to STATE_INITIALISED.
-			\details This Allows the task to be re-used
-		*/
-		virtual void Reset();
-
-		/*!
 			\return True if Task::Wait() can be called.
 		*/
 		inline bool IsWaitable() const throw() {

@@ -413,6 +413,10 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
 #endif
+#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
+		// Make sure children are destroyed first
+		while (_fast_child_count + _fast_recursive_child_count > 0u);
+#endif
 #if ANVIL_TASK_PARENT
 		// Remove task from list of children
 		Task* parent = _parent;
@@ -425,7 +429,6 @@ namespace anvil {
 
 			--_parent->_fast_child_count;
 
-			parent = parent->_parent;
 			while (parent) {
 				--parent->_fast_recursive_child_count;
 				parent = parent->_parent;
@@ -466,32 +469,6 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Caught exception in task %task% on thread %thread%");
 #endif
-	}
-
-	void Task::Reset() {
-		// If the task is already initialised
-		if(_state == STATE_INITIALISED) return;
-
-		// If the task is already initialised
-		if (_state != STATE_COMPLETE && _state != STATE_CANCELED) return;
-		if (_state == STATE_COMPLETE && _wait_flag != 1u) throw std::runtime_error("Task::Reset : Task not fully completed execution");
-
-		// Reset variables
-#if ANVIL_TASK_FIBERS
-		_fiber = nullptr;
-#endif
-		_scheduler = nullptr;
-#if ANVIL_TASK_HAS_EXCEPTIONS
-		_exception = nullptr;
-#endif
-#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
-		_parent = nullptr;
-		_fast_child_count = 0u;
-		_fast_recursive_child_count = 0u;
-		_nesting_depth = 0u;
-#endif
-		_wait_flag = 0u;
-		_state = STATE_INITIALISED;
 	}
 
 	bool Task::Cancel() throw() {

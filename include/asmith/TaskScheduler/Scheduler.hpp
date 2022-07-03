@@ -176,6 +176,16 @@ namespace anvil {
 			Schedule(task.get(), priority);
 		}
 
+		inline void Schedule(Task& task) {
+			Task* t = &task;
+			Schedule(&t, 1u);
+		}
+
+		inline void Schedule(std::unique_ptr<Task>& task) {
+			Task* t = task.get();
+			Schedule(&t, 1u);
+		}
+
 		inline void Schedule(std::shared_ptr<Task>& task) {
 			Task* t = task.get();
 			Schedule(&t, 1u);
