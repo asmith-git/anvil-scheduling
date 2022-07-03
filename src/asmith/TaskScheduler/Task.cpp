@@ -180,7 +180,7 @@ namespace anvil {
 		void OnTaskExecuteEnd(Task& task) {
 #if ANVIL_DEBUG_TASKS
 			TaskThreadLocalData* data = GetCurrentExecutingTaskData();
-			if (data == nullptr || data->task != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
+			if (data == nullptr || data->task.get() != &task) throw std::runtime_error("anvil::_TaskThreadLocalData::OnTaskExecuteEnd : Task is not the currently executing one");
 #endif
 			{
 				auto end = _tasks_by_priority.end();
@@ -1105,7 +1105,7 @@ APPEND_TIME:
 			t.OnBlock();
 #endif
 #if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(&t, nullptr, "Task %task% paused on thread %thread% after executing for " + std::to_string(debug_time - _debug_timer) + " milliseconds");
+			anvil::PrintDebugMessage(&t, nullptr, "Task %task% yielding on thread %thread% after executing for " + std::to_string(debug_time - t._debug_timer) + " milliseconds");
 #endif
 
 
@@ -1130,9 +1130,6 @@ EXIT_CONDITION:
 
 				} else {
 					// Block until there is a queue update
-#if ANVIL_DEBUG_TASKS
-					anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
-#endif
 					// Update that thread is sleeping
 					if (debug_data) {
 						debug_data->sleeping = 1u;
@@ -1152,11 +1149,19 @@ EXIT_CONDITION:
 					// If the number of queued tasks has changed (becuase the lock took time to acquire) 
 					// Then skip over the sleep for this attempt
 					if (_task_queue.size() == tasks_queued_before_lock) {
+#if ANVIL_DEBUG_TASKS
+						anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
+						const float sleep_start_time = GetDebugTime();
+#endif
 						if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 							_task_queue_update.wait(lock);
 						} else {
 							_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 						}
+
+#if ANVIL_DEBUG_TASKS
+						anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up after " + std::to_string(GetDebugTime() - sleep_start_time) + " milliseconds");
+#endif
 					}
 
 					// Update that the thread is running
@@ -1164,10 +1169,6 @@ EXIT_CONDITION:
 						debug_data->sleeping = 0u;
 						++_scheduler_debug.executing_thread_count;
 					}
-
-#if ANVIL_DEBUG_TASKS
-					anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up");
-#endif
 				}
 
 			}
@@ -1183,7 +1184,7 @@ EXIT_CONDITION:
 			// State change
 			t._state = Task::STATE_EXECUTING;
 #if ANVIL_DEBUG_TASKS
-			anvil::PrintDebugMessage(&t, nullptr, "Task %task% resumed execution on thread %thread% after being paused for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
+			anvil::PrintDebugMessage(&t, nullptr, "Task %task% resumed execution on thread %thread% after yielding for " + std::to_string(GetDebugTime() - debug_time) + " milliseconds");
 #endif
 
 #if ANVIL_TASK_CALLBACKS
