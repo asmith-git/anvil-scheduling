@@ -106,6 +106,7 @@ namespace anvil {
 #endif
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;
+		uint64_t _debug_id;
 #endif
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		std::shared_ptr<Task> _parent;
@@ -289,6 +290,8 @@ namespace anvil {
 
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
+
+		inline uint64_t GetDebugID() const { return _debug_id; }
 
 		static void SetDebugStream(std::ostream&);
 #endif

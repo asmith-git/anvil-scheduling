@@ -274,11 +274,11 @@ namespace anvil {
 	}
 
 	static std::string GetShortName(const Task* task) {
-		return std::to_string(reinterpret_cast<uintptr_t>(task));
+		return task == nullptr ? "NULL" : std::to_string(task->GetDebugID());
 	}
 
 	static std::string GetShortName(const Scheduler* scheduler) {
-		return std::to_string(reinterpret_cast<uintptr_t>(scheduler));
+		return scheduler == nullptr ? "NULL" : std::to_string(reinterpret_cast<uintptr_t>(scheduler));
 	}
 
 	static std::string FormatClassName(std::string name) {
@@ -313,56 +313,49 @@ namespace anvil {
 	}
 
 	static void PrintDebugMessage(const Task* task, const Scheduler* scheduler, std::string message) {
-		// Task name
-		if (task) {
-			// Replace task name
-			auto i = message.find("%task%");
-			if (i != std::string::npos) {
-				std::string short_name = GetShortName(task);
-				while (i != std::string::npos) {
-					message.replace(i, 6, short_name);
-					i = message.find("%task%");
-				}
-			}
-
-			i = message.find("%task_class%");
-			if (i != std::string::npos) {
-				std::string long_name = GetLongName(task);
-				while (i != std::string::npos) {
-					message.replace(i, 12, long_name);
-					i = message.find("%task_class%");
-				}
+		// Replace task name
+		auto i = message.find("%task%");
+		if (i != std::string::npos) {
+			std::string short_name = GetShortName(task);
+			while (i != std::string::npos) {
+				message.replace(i, 6, short_name);
+				i = message.find("%task%");
 			}
 		}
 
-		// Scheduler name
-		if (scheduler) {
-
-			// Replace task name
-			auto i = message.find("%scheduler%");
-			if (i != std::string::npos) {
-				std::string short_name = GetShortName(scheduler);
-				while (i != std::string::npos) {
-					message.replace(i, 11, short_name);
-					i = message.find("%scheduler%");
-				}
+		i = message.find("%task_class%");
+		if (i != std::string::npos) {
+			std::string long_name = GetLongName(task);
+			while (i != std::string::npos) {
+				message.replace(i, 12, long_name);
+				i = message.find("%task_class%");
 			}
+		}
 
-			i = message.find("%scheduler_class%");
-			if (i != std::string::npos) {
-				std::string long_name = GetLongName(scheduler);
-				while (i != std::string::npos) {
-					message.replace(i, 17, long_name);
-					i = message.find("%scheduler_class%");
-				}
+		// Replace scheduler name
+		i = message.find("%scheduler%");
+		if (i != std::string::npos) {
+			std::string short_name = GetShortName(scheduler);
+			while (i != std::string::npos) {
+				message.replace(i, 11, short_name);
+				i = message.find("%scheduler%");
+			}
+		}
+
+		i = message.find("%scheduler_class%");
+		if (i != std::string::npos) {
+			std::string long_name = GetLongName(scheduler);
+			while (i != std::string::npos) {
+				message.replace(i, 17, long_name);
+				i = message.find("%scheduler_class%");
 			}
 		}
 
 
 		// Replace thread id
-		auto i = message.find("%thread%");
+		i = message.find("%thread%");
 		if (i != std::string::npos) {
-			std::string thread = (std::ostringstream() << std::this_thread::get_id()).str();
+			std::string thread = (g_thread_local_data.is_worker_thread ? "WORKER_" : "USER_") + (std::ostringstream() << std::this_thread::get_id()).str();
 			message.replace(i, 8, thread);
 		}
 
@@ -390,6 +383,9 @@ namespace anvil {
 #define INVALID_SCHEDULER nullptr
 
 	// Task
+#if ANVIL_DEBUG_TASKS
+	static std::atomic_uint64_t g_debug_id = 0u;
+#endif
 
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
@@ -405,6 +401,9 @@ namespace anvil {
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED)
 	{
+#if ANVIL_DEBUG_TASKS
+		_debug_id = g_debug_id++;
+#endif
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is created on thread %thread%");
 #endif
