@@ -111,6 +111,7 @@ namespace anvil {
 		std::shared_ptr<Task> _parent;
 		std::atomic_uint16_t _fast_child_count;
 		std::atomic_uint16_t _fast_recursive_child_count;
+		uint16_t _nesting_depth;
 #endif
 
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task

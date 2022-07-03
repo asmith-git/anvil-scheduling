@@ -399,6 +399,7 @@ namespace anvil {
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		_fast_child_count(0u),
 		_fast_recursive_child_count(0u),
+		_nesting_depth(0u),
 #endif
 		_wait_flag(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
@@ -760,8 +761,11 @@ APPEND_TIME:
 	}
 
 	size_t Task::GetNestingDepth() const throw() {
-		const std::shared_ptr<Task> p = GetParent();
-		return p ? p->GetNestingDepth() + 1u : 0u;
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+		return _nesting_depth;
+#else
+		return 0u;
+#endif
 	}
 
 #if ANVIL_TASK_FIBERS
@@ -1251,16 +1255,19 @@ EXIT_CONDITION:
 #endif
 
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			t._nesting_depth = 0u;
 			// Update the child / parent relationship between tasks
 			t._parent = parent;
 			if (parent) {
 #if ANVIL_TASK_PARENT
 				parent->_children.push_back(tasks[i]);
 #endif
+				++t._nesting_depth;
 				++parent->_fast_child_count;
 
 				std::shared_ptr<anvil::Task> parent2 = parent;
 				while (parent2) {
+					++t._nesting_depth;
 					++parent2->_fast_recursive_child_count;
 					parent2 = parent2->_parent;
 				}
