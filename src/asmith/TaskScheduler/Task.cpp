@@ -459,6 +459,31 @@ namespace anvil {
 #endif
 	}
 
+	void Task::Reset() {
+		// If the task is already initialised
+		if(_state == STATE_INITIALISED) return;
+
+		// If the task is already initialised
+		if (_state != STATE_COMPLETE && _state != STATE_CANCELED) return;
+
+		// Reset variables
+#if ANVIL_TASK_FIBERS
+		_fiber = nullptr;
+#endif
+		_scheduler = nullptr;
+#if ANVIL_TASK_HAS_EXCEPTIONS
+		_exception = nullptr;
+#endif
+#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
+		_parent = nullptr;
+		_fast_child_count = 0u;
+		_fast_recursive_child_count = 0u;
+		_nesting_depth = 0u;
+#endif
+		_wait_flag = 0u;
+		_state = STATE_INITIALISED;
+	}
+
 	bool Task::Cancel() throw() {
 		// If no scheduler is attached to this task then it cannot be canceled
 		Scheduler* scheduler = _GetScheduler();
@@ -978,7 +1003,7 @@ APPEND_TIME:
 		if (notify) TaskQueueNotify();
 
 		// Return the task if one was found
-		tasks[0u].swap(task);
+		tasks[0u] = task;
 		count = 1u;
 #else
 		// Check if there are tasks before locking the queue
