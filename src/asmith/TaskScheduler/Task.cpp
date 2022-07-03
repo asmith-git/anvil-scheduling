@@ -407,6 +407,16 @@ namespace anvil {
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
+	std::mutex& Task::GetMutex() const {
+		Scheduler* scheduler = _scheduler;
+		if (scheduler) {
+			return scheduler->_mutex;
+		} else {
+			static std::mutex g_task_mutex;
+			return g_task_mutex;
+		}
+	}
+
 	std::shared_ptr<Task> Task::GetCurrentlyExecutingTask() {
 		auto data = g_thread_local_data.GetCurrentExecutingTaskData();
 		return data == nullptr ? nullptr : data->task;
@@ -692,9 +702,12 @@ APPEND_TIME:
 	std::vector<std::shared_ptr<Task>> Task::GetChildren() const throw() {
 		std::vector<std::shared_ptr<Task>> children;
 #if ANVIL_TASK_PARENT
-		for (const std::weak_ptr<Task>& t : _children) {
-			std::shared_ptr<Task> t2 = t.lock();
-			if (t2) children.push_back(std::move(t2));
+		{
+			std::lock_guard<std::mutex> lock(GetMutex());
+			for (const std::weak_ptr<Task>& t : _children) {
+				std::shared_ptr<Task> t2 = t.lock();
+				if (t2) children.push_back(std::move(t2));
+			}
 		}
 #endif
 		return children;
@@ -706,6 +719,7 @@ APPEND_TIME:
 			return _fast_child_count;
 		} else {
 			size_t count = 0u;
+			std::lock_guard<std::mutex> lock(GetMutex());
 			for (const std::weak_ptr<Task>& t : _children) {
 				std::shared_ptr<Task> t2 = t.lock();
 				if (t2) ++count;

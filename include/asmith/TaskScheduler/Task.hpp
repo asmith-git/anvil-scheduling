@@ -187,6 +187,8 @@ namespace anvil {
 		*/
 		virtual ~Task();
 
+		std::mutex& GetMutex() const;
+
 		/*!
 			\brief Wait for the task to complete.
 			\detail If the task is not complete then Task::Yield will be called.
