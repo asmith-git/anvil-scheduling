@@ -172,6 +172,8 @@ namespace anvil {
 			FiberData* fiber = AllocateFiber();
 			fiber->task = data->task;
 			task._fiber = fiber->fiber;
+#else
+			_current_task = data;
 #endif
 		}
 
@@ -215,6 +217,13 @@ namespace anvil {
 				}
 			}
 			task._fiber = nullptr;
+#else
+			if (_tasks.empty()) {
+				_current_task = nullptr;
+			} else {
+				_current_task = &_tasks.back();
+			}
+
 #endif
 		}
 
