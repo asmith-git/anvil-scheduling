@@ -387,7 +387,7 @@ namespace anvil {
 #if ANVIL_TASK_FIBERS
 		_fiber(nullptr),
 #endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		_fast_child_count(0u),
 		_fast_recursive_child_count(0u),
 #endif
@@ -703,7 +703,7 @@ APPEND_TIME:
 	size_t Task::GetChildCount(bool aproximate) const throw() {
 #if ANVIL_TASK_PARENT
 		if (aproximate) {
-			return _children.size();
+			return _fast_child_count;
 		} else {
 			size_t count = 0u;
 			for (const std::weak_ptr<Task>& t : _children) {
@@ -721,10 +721,14 @@ APPEND_TIME:
 
 	size_t Task::GetRecursiveChildCount(bool aproximate) const throw() {
 #if ANVIL_TASK_PARENT
-		size_t count = 0;
-		std::vector<std::shared_ptr<Task>> children = GetChildren();
-		for (std::shared_ptr<Task>& child : children) count += child->GetRecursiveChildCount(aproximate);
-		return count + children.size();
+		if (aproximate) {
+			return _fast_recursive_child_count;
+		} else {
+			size_t count = 0;
+			std::vector<std::shared_ptr<Task>> children = GetChildren();
+			for (std::shared_ptr<Task>& child : children) count += child->GetRecursiveChildCount(aproximate);
+			return count + children.size();
+		}
 #elif ANVIL_TASK_FAST_CHILD_COUNT
 		return _fast_recursive_child_count;
 #else
@@ -1224,13 +1228,12 @@ EXIT_CONDITION:
 #endif
 
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			// Update the child / parent relationship between tasks
 			t._parent = parent;
-#endif
-#if ANVIL_TASK_PARENT
-			if (parent) parent->_children.push_back(tasks[i]);
-#endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
 			if (parent) {
+#if ANVIL_TASK_PARENT
+				parent->_children.push_back(tasks[i]);
+#endif
 				++parent->_fast_child_count;
 
 				std::shared_ptr<anvil::Task> parent2 = parent;

@@ -108,12 +108,11 @@ namespace anvil {
 
 #if ANVIL_TASK_PARENT
 		std::vector<std::weak_ptr<Task>> _children;
-		std::shared_ptr<Task> _parent;
 #endif
-#if ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
+		std::shared_ptr<Task> _parent;
 		std::atomic_uint32_t _fast_child_count;
 		std::atomic_uint32_t _fast_recursive_child_count;
-		std::shared_ptr<Task> _parent;
 #endif
 
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
