@@ -413,6 +413,25 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		anvil::PrintDebugMessage(this, nullptr, "Task %task% is destroyed on thread %thread%");
 #endif
+#if ANVIL_TASK_PARENT
+		// Remove task from list of children
+		Task* parent = _parent;
+		if (parent) {
+			std::lock_guard<std::mutex> lock(parent->GetMutex());
+
+			auto end = parent->_children.end();
+			auto i = std::find(parent->_children.begin(), end, this);
+			_parent->_children.erase(i);
+
+			--_parent->_fast_child_count;
+
+			parent = parent->_parent;
+			while (parent) {
+				--parent->_fast_recursive_child_count;
+				parent = parent->_parent;
+			}
+		}
+#endif
 		//! \bug If the task is scheduled it must be removed from the scheduler
 	}
 
