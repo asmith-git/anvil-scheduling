@@ -465,6 +465,9 @@ namespace anvil {
 
 		// If the task is already initialised
 		if (_state != STATE_COMPLETE && _state != STATE_CANCELED) return;
+#if ANVIL_TASK_HAS_EXCEPTIONS
+		if (_state == STATE_COMPLETE && _wait_flag != 1u) throw std::runtime_error("Task::Reset : Task not fully completed execution");
+#endif
 
 		// Reset variables
 #if ANVIL_TASK_FIBERS
