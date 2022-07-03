@@ -199,10 +199,20 @@ namespace anvil {
 #endif
 
 		uint32_t GetThisThreadIndex() const;
-		ThreadDebugData* GetDebugDataForThread(const uint32_t index);
-		inline ThreadDebugData* GetDebugDataForThisThread() { return GetDebugDataForThread(GetThisThreadIndex()); }
-		SchedulerDebugData& GetDebugData();
 
+		inline ThreadDebugData* GetDebugDataForThread(const uint32_t index) {
+			return index > _scheduler_debug.total_thread_count ? nullptr : _scheduler_debug.thread_debug_data + index;
+		}
+
+		inline ThreadDebugData* GetDebugDataForThisThread() { 
+			return GetDebugDataForThread(GetThisThreadIndex());
+		}
+
+		inline SchedulerDebugData& GetDebugData() {
+			_scheduler_debug.sleeping_thread_count = _scheduler_debug.total_thread_count - _scheduler_debug.executing_thread_count;
+			_scheduler_debug.total_tasks_queued = static_cast<uint32_t>(_task_queue.size());
+			return _scheduler_debug;
+		}
 
 		/*!
 			\brief Return the total number of threads.

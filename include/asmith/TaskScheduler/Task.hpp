@@ -85,7 +85,9 @@ namespace anvil {
 		/*!
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
-		Scheduler* _GetScheduler() const throw();
+		inline Scheduler* _GetScheduler() const throw() {
+			return _scheduler;
+		}
 
 		/*!
 			\brief Calls Task::OnExecution() with proper state changes and exception handling
@@ -126,7 +128,14 @@ namespace anvil {
 			\param condition Returns true when the task is no longer waiting for something.
 			\param max_sleep_milliseconds The longest period of time the thread should sleep for before checking the wait condition again.
 		*/
-		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
+		inline void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u) {
+			Scheduler* scheduler = _scheduler;
+			if (scheduler) {
+				scheduler->Yield(condition, max_sleep_milliseconds);
+			} else {
+				throw std::runtime_error("anvil::Task::Yield : Cannot yield without a scheduler");
+			}
+	}
 
 		/*!
 			\brief Implements the work payload of the task.
@@ -235,25 +244,51 @@ namespace anvil {
 		/*!
 			\return The current priority of the Task.
 		*/
-		Priority GetPriority() const throw();
+		inline Priority GetPriority() const throw() {
+			return static_cast<Priority>(_priority);
+		}
 
 		/*!
 			\return The parent of this task or null if there is no known parent
 		*/
-		Task* GetParent() const throw();
+		inline Task* GetParent() const throw() {
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			return _parent;
+#endif
+			return nullptr;
+		}
 
 		/*!
 			\return The a children of this task
 		*/
-		std::vector<Task*> GetChildren() const throw();
+		inline std::vector<Task*> GetChildren() const throw() {
+#if ANVIL_TASK_PARENT
+			std::lock_guard<std::mutex> lock(GetMutex());
+			return _children;
+#else
+			return std::vector<Task*>();
+#endif
+		}
 
 		/*!
 			\param aproximate If true then count will include children that previously existed but have since been destroyed (this is faster)
 			\return The number of children this task has
 		*/
-		size_t GetChildCount(bool aproximate = false) const throw();
+		inline size_t GetChildCount(bool aproximate = false) const throw() {
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			return _fast_child_count;
+#else
+			return 0u;
+#endif
+		}
 
-		size_t GetRecursiveChildCount(bool aproximate = false) const throw();
+		inline size_t GetRecursiveChildCount(bool aproximate = false) const throw() {
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			return _fast_recursive_child_count;
+#else
+			return 0u;
+#endif
+		}
 
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)

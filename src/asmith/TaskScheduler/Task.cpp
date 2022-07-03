@@ -440,16 +440,6 @@ namespace anvil {
 		return data == nullptr ? nullptr : data->task;
 	}
 
-	void Task::Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds) {
-		Scheduler* scheduler = _scheduler;
-		if (scheduler) {
-			scheduler->Yield(condition, max_sleep_milliseconds);
-		} else {
-			throw std::runtime_error("anvil::Task::Yield : Cannot yield without a scheduler");
-		}
-	}
-
-
 	void Task::SetException(std::exception_ptr exception) {
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		_exception = exception;
@@ -465,9 +455,7 @@ namespace anvil {
 
 		// If the task is already initialised
 		if (_state != STATE_COMPLETE && _state != STATE_CANCELED) return;
-#if ANVIL_TASK_HAS_EXCEPTIONS
 		if (_state == STATE_COMPLETE && _wait_flag != 1u) throw std::runtime_error("Task::Reset : Task not fully completed execution");
-#endif
 
 		// Reset variables
 #if ANVIL_TASK_FIBERS
@@ -621,14 +609,6 @@ HANDLE_ERROR:
 		std::rethrow_exception(exception);
 	}
 
-	Task::Priority Task::GetPriority() const throw() {
-		return static_cast<Priority>(_priority);
-	}
-
-	Scheduler* Task::_GetScheduler() const throw() {
-		return _scheduler;
-	}
-
 	void Task::Execute() throw() {
 #if ANVIL_DEBUG_TASKS
 		{
@@ -726,38 +706,6 @@ APPEND_TIME:
 		FiberData data;
 		data.task = this;
 		FiberFunction(&data);
-#endif
-	}
-
-	Task* Task::GetParent() const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-		return _parent;
-#endif
-		return nullptr;
-	}
-
-	std::vector<Task*> Task::GetChildren() const throw() {
-#if ANVIL_TASK_PARENT
-		std::lock_guard<std::mutex> lock(GetMutex());
-		return _children;
-#else
-		return std::vector<Task*>();
-#endif
-	}
-
-	size_t Task::GetChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-		return _fast_child_count;
-#else
-		return 0u;
-#endif
-	}
-
-	size_t Task::GetRecursiveChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-		return _fast_recursive_child_count;
-#else
-		return 0u;
 #endif
 	}
 
@@ -1220,24 +1168,6 @@ EXIT_CONDITION:
 	}
 
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
-		// Schedule in smaller groups so tasks can start executing as they are scheduled
-		//{
-		//	uint32_t block_size = _task_queue.empty() ? _scheduler_debug.total_thread_count.load() : 256;
-
-		//	if (count > block_size) {
-		//		uint32_t count2 = count;
-		//		while (count2 > 0) {
-		//			uint32_t tasks_to_add = count2 < block_size ? count2 : block_size;
-		//			Schedule(tasks, tasks_to_add);
-		//			tasks += tasks_to_add;
-		//			count2 -= tasks_to_add;
-
-		//			block_size = 256;
-		//		}
-		//		return;
-		//	}
-		//}
-
 		const auto this_scheduler = this;
 
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
@@ -1384,15 +1314,5 @@ EXIT_CONDITION:
 
 	uint32_t Scheduler::GetThisThreadIndex() const {
 		return g_thread_local_data.scheduler_index;
-	}
-
-	Scheduler::ThreadDebugData* Scheduler::GetDebugDataForThread(const uint32_t index) {
-		return index > _scheduler_debug.total_thread_count ? nullptr : _scheduler_debug.thread_debug_data + index;
-	}
-
-	Scheduler::SchedulerDebugData& Scheduler::GetDebugData() {
-		_scheduler_debug.sleeping_thread_count = _scheduler_debug.total_thread_count - _scheduler_debug.executing_thread_count;
-		_scheduler_debug.total_tasks_queued = static_cast<uint32_t>(_task_queue.size());
-		return _scheduler_debug;
 	}
 }
