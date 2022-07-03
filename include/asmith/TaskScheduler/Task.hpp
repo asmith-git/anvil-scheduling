@@ -94,6 +94,9 @@ namespace anvil {
 
 		void SetException(std::exception_ptr exception);
 
+#if ANVIL_TASK_PARENT
+		std::vector<std::weak_ptr<Task>> _children;
+#endif
 #if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
 #endif
@@ -101,22 +104,17 @@ namespace anvil {
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
-
 #if ANVIL_DEBUG_TASKS
 		float _debug_timer;
 #endif
-
-#if ANVIL_TASK_PARENT
-		std::vector<std::weak_ptr<Task>> _children;
-#endif
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		std::shared_ptr<Task> _parent;
-		std::atomic_uint32_t _fast_child_count;
-		std::atomic_uint32_t _fast_recursive_child_count;
+		std::atomic_uint16_t _fast_child_count;
+		std::atomic_uint16_t _fast_recursive_child_count;
 #endif
 
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
-		std::atomic_uint16_t _wait_flag;	//!< Set to 1 when it is okay to exit out of Task::Wait()
+		std::atomic_uint8_t _wait_flag;		//!< Set to 1 when it is okay to exit out of Task::Wait()
 		State _state;						//!< Stores the current state of the task
 	protected:
 		/*!
