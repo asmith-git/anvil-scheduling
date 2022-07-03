@@ -760,14 +760,6 @@ APPEND_TIME:
 #endif
 	}
 
-	size_t Task::GetNestingDepth() const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-		return _nesting_depth;
-#else
-		return 0u;
-#endif
-	}
-
 #if ANVIL_TASK_FIBERS
 	void WINAPI Task::FiberFunction(LPVOID param) {
 		while (true) {

@@ -251,7 +251,13 @@ namespace anvil {
 		/*!
 			\return Return the size of the inheritance tree for this task (0 if there is no parent)
 		*/
-		size_t GetNestingDepth() const throw();
+		inline size_t GetNestingDepth() const throw() {
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+			return _nesting_depth;
+#else
+			return 0u;
+#endif
+		}
 
 		/*!
 			\details Will thrown an exception if no scheduler is attached to this Task.
