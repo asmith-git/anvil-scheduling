@@ -510,10 +510,8 @@ namespace anvil {
 			// Call the cancelation callback
 			try {
 				OnCancel();
-			} catch (std::exception&) {
-				SetException(std::current_exception());
 			} catch (...) {
-				SetException(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception")));
+				SetException(std::current_exception());
 			}
 			
 #endif
@@ -523,7 +521,12 @@ namespace anvil {
 		}
 
 		// Canceled successfully
-		_wait_flag = 1u;
+		try {
+			uint8_t expected = 0u;
+			if (!_wait_flag.compare_exchange_strong(expected, 1u, std::memory_order_acq_rel)) throw std::runtime_error("Task::Cancel : Memory anomaly detected on wait flag");
+		} catch (...) {
+			SetException(std::current_exception());
+		}
 
 		// Notify anythign waiting for changes to the task queue
 		if (notify) scheduler->TaskQueueNotify();
@@ -546,10 +549,13 @@ namespace anvil {
 		);
 #endif
 
-		#define YieldCondition() (_wait_flag == 1)
+		const auto YieldCondition = [this]()->bool {
+			uint8_t expected = 1u;
+			return _wait_flag.compare_exchange_strong(expected, 0u, std::memory_order_acq_rel);
+		};
 
 		if (will_yield) {
-			scheduler->Yield([this]()->bool {
+			scheduler->Yield([this, YieldCondition]()->bool {
 				return YieldCondition();
 			});
 		} else {
@@ -805,15 +811,17 @@ APPEND_TIME:
 
 				try {
 					g_thread_local_data.OnTaskExecuteEnd(task);
-				}
-				catch (std::exception& e) {
+				} catch (std::exception& e) {
 					CatchException(std::move(std::current_exception()), false);
 				}
-				catch (...) {
-					CatchException(std::exception_ptr(), false);
+
+				try {
+					uint8_t expected = 0u;
+					if (!task._wait_flag.compare_exchange_strong(expected, 1u, std::memory_order_acq_rel)) throw std::runtime_error("Task::Execute : Memory anomaly detected on write flag");
+				} catch (...) {
+					CatchException(std::move(std::current_exception()), false);
 				}
 
-				task._wait_flag = 1;
 
 				scheduler.TaskQueueNotify();
 			}
