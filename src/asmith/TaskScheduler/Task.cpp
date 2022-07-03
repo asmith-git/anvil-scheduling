@@ -1129,11 +1129,6 @@ EXIT_CONDITION:
 
 				} else {
 					// Block until there is a queue update
-					// Update that thread is sleeping
-					if (debug_data) {
-						debug_data->sleeping = 1u;
-						--_scheduler_debug.executing_thread_count;
-					}
 
 					// Acquire a lock on the scheduler
 					const size_t tasks_queued_before_lock = _task_queue.size();
@@ -1152,21 +1147,27 @@ EXIT_CONDITION:
 						anvil::PrintDebugMessage(nullptr, this, "Thread %thread% put to sleep because there was no work on Scheduler %scheduler%");
 						const float sleep_start_time = GetDebugTime();
 #endif
+						// Update that thread is sleeping
+						if (debug_data) {
+							debug_data->sleeping = 1u;
+							--_scheduler_debug.executing_thread_count;
+						}
+
 						if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
 							_task_queue_update.wait(lock);
 						} else {
 							_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
 						}
 
+						// Update that the thread is running
+						if (debug_data) {
+							debug_data->sleeping = 0u;
+							++_scheduler_debug.executing_thread_count;
+						}
+
 #if ANVIL_DEBUG_TASKS
 						anvil::PrintDebugMessage(nullptr, this, "Thread %thread% woke up after " + std::to_string(GetDebugTime() - sleep_start_time) + " milliseconds");
 #endif
-					}
-
-					// Update that the thread is running
-					if (debug_data) {
-						debug_data->sleeping = 0u;
-						++_scheduler_debug.executing_thread_count;
 					}
 				}
 
@@ -1251,6 +1252,9 @@ EXIT_CONDITION:
 			// Update the child / parent relationship between tasks
 			t._parent = parent;
 			if (parent) {
+#if ANVIL_DEBUG_TASKS
+				anvil::PrintDebugMessage(&t, this, "Task %task% is a child of Task " + std::to_string(parent->GetDebugID()));
+#endif
 #if ANVIL_TASK_PARENT
 				parent->_children.push_back(tasks[i]);
 #endif

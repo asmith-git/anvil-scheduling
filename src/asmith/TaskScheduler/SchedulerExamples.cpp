@@ -69,7 +69,7 @@ namespace anvil {
 					_scheduler.PrintDebugMessage("Thread %thread% looking for tasks to execute");
 #endif
 					// Execute tasks until the flag changes
-					_scheduler.Yield([this]()->bool { return _comm_flag != COMM_EXECUTE; });
+					_scheduler.Yield([this]()->bool { return _comm_flag != COMM_EXECUTE; }, 1000u);
 					break;
 				case COMM_EXIT:
 #if ANVIL_DEBUG_TASKS
