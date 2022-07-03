@@ -1036,7 +1036,7 @@ APPEND_TIME:
 		// Try to start the execution of a new task
 		enum { MAX_TASKS = 32u };
 		std::shared_ptr<Task> tasks[MAX_TASKS];
-		uint32_t task_count = _task_queue.size() / _scheduler_debug.total_thread_count;
+		uint32_t task_count = static_cast<uint32_t>(_task_queue.size()) / _scheduler_debug.total_thread_count;
 		if (task_count < 1) task_count = 1u;
 		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
 		RemoveNextTaskFromQueue(tasks, task_count);
@@ -1372,7 +1372,7 @@ EXIT_CONDITION:
 
 	Scheduler::SchedulerDebugData& Scheduler::GetDebugData() {
 		_scheduler_debug.sleeping_thread_count = _scheduler_debug.total_thread_count - _scheduler_debug.executing_thread_count;
-		_scheduler_debug.total_tasks_queued = _task_queue.size();
+		_scheduler_debug.total_tasks_queued = static_cast<uint32_t>(_task_queue.size());
 		return _scheduler_debug;
 	}
 }
