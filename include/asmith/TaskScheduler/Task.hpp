@@ -53,7 +53,7 @@ namespace anvil {
 		- ANVIL_TASK_DELAY_SCHEDULING : A task is not executed until Task::IsReadyToExecute() returns true.
 		These features are disabled by default to avoid any overheads that would be added to scheduling systems that don't need them.
 	*/
-	class ANVIL_DLL_EXPORT Task : public std::enable_shared_from_this<Task> {
+	class ANVIL_DLL_EXPORT Task {
 	public:
 		/*!
 			\brief Describes which point in the execution cycle a Task is in.
@@ -95,7 +95,7 @@ namespace anvil {
 		void SetException(std::exception_ptr exception);
 
 #if ANVIL_TASK_PARENT
-		std::vector<std::weak_ptr<Task>> _children;
+		std::vector<Task*> _children;
 #endif
 #if ANVIL_TASK_FIBERS
 		LPVOID _fiber;
@@ -109,7 +109,7 @@ namespace anvil {
 		uint64_t _debug_id;
 #endif
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
-		std::shared_ptr<Task> _parent;
+		Task* _parent;
 		std::atomic_uint16_t _fast_child_count;
 		std::atomic_uint16_t _fast_recursive_child_count;
 		uint16_t _nesting_depth;
@@ -234,12 +234,12 @@ namespace anvil {
 		/*!
 			\return The parent of this task or null if there is no known parent
 		*/
-		std::shared_ptr<Task> GetParent() const throw();
+		Task* GetParent() const throw();
 
 		/*!
 			\return The a children of this task
 		*/
-		std::vector<std::shared_ptr<Task>> GetChildren() const throw();
+		std::vector<Task*> GetChildren() const throw();
 
 		/*!
 			\param aproximate If true then count will include children that previously existed but have since been destroyed (this is faster)
@@ -274,14 +274,14 @@ namespace anvil {
 			\brief Return the Task that is currently executing on this thread.
 			\details Returns nullptr if there is no task executing on this thread.
 		*/
-		static std::shared_ptr<Task> GetCurrentlyExecutingTask();
+		static Task* GetCurrentlyExecutingTask();
 
 		/*!
 			\brief Return a Task that is executing on this thread.
 			\param Index the index in the execution stack, 0u is the first Task that started executing.
 			\see GetNumberOfTasksExecutingOnThisThread()
 		*/
-		static std::shared_ptr<Task> GetCurrentlyExecutingTask(size_t index);
+		static Task* GetCurrentlyExecutingTask(size_t index);
 
 		/*!
 			\brief Return the number of Tasks that are currently executing on this thread.

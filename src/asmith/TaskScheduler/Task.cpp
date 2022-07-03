@@ -38,7 +38,7 @@
 namespace anvil {
 
 	struct TaskThreadLocalData {
-		std::shared_ptr<Task> task;
+		Task* task;
 		const std::function<bool(void)>* yield_condition;
 
 		TaskThreadLocalData() :
@@ -53,7 +53,7 @@ namespace anvil {
 #else
 		void* fiber;
 #endif
-		std::shared_ptr<Task> task;
+		Task* task;
 
 		FiberData() :
 			fiber(nullptr),
@@ -160,7 +160,7 @@ namespace anvil {
 		inline void OnTaskExecuteBegin(Task& task) {
 			_tasks.push_back(TaskThreadLocalData());
 			TaskThreadLocalData* data = &_tasks.back();
-			data->task = task.shared_from_this();
+			data->task = &task;
 			_tasks_by_priority.push_back(data);
 
 			// Sort tasks by priority
@@ -185,7 +185,7 @@ namespace anvil {
 			{
 				auto end = _tasks_by_priority.end();
 				auto i = std::find_if(_tasks_by_priority.begin(), end, [&task](const TaskThreadLocalData* data)->bool {
-					return data->task.get() == &task;
+					return data->task == &task;
 				});
 				if (i != end) {
 					if (_tasks_by_priority.size() == 1u) {
@@ -198,7 +198,7 @@ namespace anvil {
 			{
 				auto end = _tasks.end();
 				auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
-					return data.task.get() == &task;
+					return data.task == &task;
 				});
 				if (i != end) {
 					if (_tasks.size() == 1u) {
@@ -233,7 +233,7 @@ namespace anvil {
 
 		TaskThreadLocalData* GetTaskData(Task& task) {
 			for (TaskThreadLocalData& data : _tasks) {
-				if (data.task.get() == &task) return &data;
+				if (data.task == &task) return &data;
 			}
 
 			return nullptr;
@@ -426,7 +426,7 @@ namespace anvil {
 		}
 	}
 
-	std::shared_ptr<Task> Task::GetCurrentlyExecutingTask() {
+	Task* Task::GetCurrentlyExecutingTask() {
 		auto data = g_thread_local_data.GetCurrentExecutingTaskData();
 		return data == nullptr ? nullptr : data->task;
 	}
@@ -435,7 +435,7 @@ namespace anvil {
 		return g_thread_local_data.GetNumberOfTasks();
 	}
 
-	std::shared_ptr<Task> Task::GetCurrentlyExecutingTask(size_t index) {
+	Task* Task::GetCurrentlyExecutingTask(size_t index) {
 		auto data = g_thread_local_data.GetTaskData(index);
 		return data == nullptr ? nullptr : data->task;
 	}
@@ -474,7 +474,7 @@ namespace anvil {
 
 			// Remove the task from the queue
 			for(auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
-				if (i->get() == this) {
+				if (*i == this) {
 					scheduler->_task_queue.erase(i);
 					notify = true;
 					break;
@@ -696,46 +696,29 @@ APPEND_TIME:
 		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this));
 #else
 		FiberData data;
-		data.task = this->shared_from_this();
+		data.task = this;
 		FiberFunction(&data);
 #endif
 	}
 
-	std::shared_ptr<Task> Task::GetParent() const throw() {
+	Task* Task::GetParent() const throw() {
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 		return _parent;
 #endif
 		return nullptr;
 	}
 
-	std::vector<std::shared_ptr<Task>> Task::GetChildren() const throw() {
-		std::vector<std::shared_ptr<Task>> children;
+	std::vector<Task*> Task::GetChildren() const throw() {
 #if ANVIL_TASK_PARENT
-		{
-			std::lock_guard<std::mutex> lock(GetMutex());
-			for (const std::weak_ptr<Task>& t : _children) {
-				std::shared_ptr<Task> t2 = t.lock();
-				if (t2) children.push_back(std::move(t2));
-			}
-		}
+		std::lock_guard<std::mutex> lock(GetMutex());
+		return _children;
+#else
+		return std::vector<Task*>();
 #endif
-		return children;
 	}
 
 	size_t Task::GetChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT
-		if (aproximate) {
-			return _fast_child_count;
-		} else {
-			size_t count = 0u;
-			std::lock_guard<std::mutex> lock(GetMutex());
-			for (const std::weak_ptr<Task>& t : _children) {
-				std::shared_ptr<Task> t2 = t.lock();
-				if (t2) ++count;
-			}
-			return count;
-		}
-#elif ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 		return _fast_child_count;
 #else
 		return 0u;
@@ -743,16 +726,7 @@ APPEND_TIME:
 	}
 
 	size_t Task::GetRecursiveChildCount(bool aproximate) const throw() {
-#if ANVIL_TASK_PARENT
-		if (aproximate) {
-			return _fast_recursive_child_count;
-		} else {
-			size_t count = 0;
-			std::vector<std::shared_ptr<Task>> children = GetChildren();
-			for (std::shared_ptr<Task>& child : children) count += child->GetRecursiveChildCount(aproximate);
-			return count + children.size();
-		}
-#elif ANVIL_TASK_FAST_CHILD_COUNT
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 		return _fast_recursive_child_count;
 #else
 		return 0u;
@@ -948,13 +922,16 @@ APPEND_TIME:
 		_task_queue_update.notify_all();
 	}
 
-	void Scheduler::RemoveNextTaskFromQueue(std::shared_ptr<Task>* tasks, uint32_t& count) throw() {
+	void Scheduler::RemoveNextTaskFromQueue(Task** tasks, uint32_t& count) throw() {
 #if ANVIL_TASK_DELAY_SCHEDULING
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
 		if (_task_queue.empty()) {
 			// If there are no active tasks, check if an innactive one has now become ready
-			if (_unready_task_queue.empty()) return std::shared_ptr<Task>();
+			if (_unready_task_queue.empty()) {
+				count = 0u;
+				return;
+			}
 
 			std::lock_guard<std::mutex> lock(_mutex);
 			CheckUnreadyTasks();
@@ -965,7 +942,7 @@ APPEND_TIME:
 			}
 		}
 
-		std::shared_ptr<Task> task = nullptr;
+		Task* task = nullptr;
 		bool notify = false;
 		{
 			// Lock the task queue so that other threads cannot access it
@@ -1018,7 +995,7 @@ APPEND_TIME:
 			// Remove the last task(s) in the queue
 			uint32_t count2 = 0u;
 			while (count2 < count && !_task_queue.empty()) {
-				tasks[count2++].swap(_task_queue.back());
+				tasks[count2++] = _task_queue.back();
 				_task_queue.pop_back();
 			}
 
@@ -1035,7 +1012,7 @@ APPEND_TIME:
 
 		// Try to start the execution of a new task
 		enum { MAX_TASKS = 32u };
-		std::shared_ptr<Task> tasks[MAX_TASKS];
+		Task* tasks[MAX_TASKS];
 		uint32_t task_count = static_cast<uint32_t>(_task_queue.size()) / _scheduler_debug.total_thread_count;
 		if (task_count < 1) task_count = 1u;
 		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
@@ -1194,12 +1171,27 @@ EXIT_CONDITION:
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
-		std::sort(_task_queue.begin(), _task_queue.end(), [](const std::shared_ptr<Task>& lhs, const std::shared_ptr<Task>& rhs)->bool {
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* lhs, const Task* rhs)->bool {
 			return lhs->_priority < rhs->_priority;
 		});
 	}
 
-	void Scheduler::Schedule(std::shared_ptr<Task>* tasks, const uint32_t count) {
+
+	void Scheduler::Schedule(std::shared_ptr<Task>* tasks, uint32_t count) {
+		enum { TASK_BLOCK = 1024 };
+		Task* tasks2[TASK_BLOCK];
+		while (count > 0) {
+			const uint32_t tasks_to_add = count > TASK_BLOCK ? TASK_BLOCK : count;
+
+			for (uint32_t i = 0u; i < tasks_to_add; ++i) tasks2[i] = tasks[i].get();
+			Schedule(tasks2, count);
+
+			tasks += tasks_to_add;
+			count -= tasks_to_add;
+		}
+	}
+
+	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
 		// Schedule in smaller groups so tasks can start executing as they are scheduled
 		//{
 		//	uint32_t block_size = _task_queue.empty() ? _scheduler_debug.total_thread_count.load() : 256;
@@ -1222,7 +1214,7 @@ EXIT_CONDITION:
 
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
-		std::shared_ptr<Task> const parent = parent_local ? parent_local->task : nullptr;
+		Task* const parent = parent_local ? parent_local->task : nullptr;
 #endif
 
 		// Initial error checking and initialisation
@@ -1261,7 +1253,7 @@ EXIT_CONDITION:
 				++t._nesting_depth;
 				++parent->_fast_child_count;
 
-				std::shared_ptr<anvil::Task> parent2 = parent;
+				anvil::Task* parent2 = parent;
 				while (parent2) {
 					++t._nesting_depth;
 					++parent2->_fast_recursive_child_count;
@@ -1347,15 +1339,15 @@ EXIT_CONDITION:
 		if (ready_count > 0u) TaskQueueNotify();
 	}
 	
-	void Scheduler::Schedule(std::shared_ptr<Task> task, Priority priority) {
+	void Scheduler::Schedule(Task* task, Priority priority) {
 		task->SetPriority(priority);
-		Schedule(task);
+		Schedule(&task, 1u);
 	}
 
 #if ANVIL_TASK_EXTENDED_PRIORITY
 	void Scheduler::RecalculatedExtendedPriorities() {
 		std::lock_guard<std::mutex> lock(_mutex);
-		for (std::shared_ptr<Task>& t : _task_queue) {
+		for (Task* t : _task_queue) {
 			t->_priority.extended = t->CalculateExtendedPriorty();
 		}
 		SortTaskQueue();

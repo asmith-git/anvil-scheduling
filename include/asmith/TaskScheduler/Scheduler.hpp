@@ -59,10 +59,10 @@ namespace anvil {
 #if ANVIL_TASK_DELAY_SCHEDULING
 		std::vector<Task*> _unready_task_queue; //!< Contains tasks that have been scheduled but are not yet ready to execute
 #endif
-		std::vector<std::shared_ptr<Task>> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
+		std::vector<Task*> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
 		void SortTaskQueue() throw();
 
-		void RemoveNextTaskFromQueue(std::shared_ptr<Task>* tasks, uint32_t& count) throw();
+		void RemoveNextTaskFromQueue(Task** tasks, uint32_t& count) throw();
 
 		/*!
 			\brief Called when a Task has been added or removed from the queue
@@ -167,32 +167,22 @@ namespace anvil {
 
 		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
 
-		void Schedule(std::shared_ptr<Task>* tasks, const uint32_t count);
+		void Schedule(Task** tasks, const uint32_t count);
+		void Schedule(std::shared_ptr<Task>* tasks, uint32_t count);
 
-		void Schedule(std::shared_ptr<Task> task, Priority priority);
+		void Schedule(Task* task, Priority priority);
+
+		inline void Schedule(std::shared_ptr<Task> task, Priority priority) {
+			Schedule(task.get(), priority);
+		}
 
 		inline void Schedule(std::shared_ptr<Task> task) {
 			Schedule(&task, 1u);
 		}
 
 		template<class T>
-		void Schedule(std::shared_ptr<T>* tasks, uint32_t count) {
-			// Allocate a small buffer in stack memory
-			enum { TASK_BLOCK = 256 };
-			std::shared_ptr<Task> tasks2[TASK_BLOCK];
-
-			// While there are tasks left to schedule
-			while (count > 0u) {
-				// Add tasks to the buffer
-				uint32_t count2 = count;
-				if (count2 > TASK_BLOCK) count2 = TASK_BLOCK;
-				for (uint32_t i = 0u; i < count2; ++i) tasks2[i] = tasks[i];
-				count -= count2;
-				tasks += count2;
-
-				// Schedule the tasks
-				Schedule(tasks2, count2);
-			}
+		inline void Schedule(std::shared_ptr<T>* tasks, uint32_t count) {
+			Schedule(reinterpret_cast<std::shared_ptr<Task>*>(tasks), count);
 		}
 
 		template<class T>
