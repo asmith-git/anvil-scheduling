@@ -198,7 +198,23 @@ namespace anvil {
 		}
 
 		template<class T>
-		inline void Schedule(T* tasks, uint32_t count) {
+		void Schedule(std::unique_ptr<T>* tasks, uint32_t count) {
+			static_assert(std::is_base_of<Task, T>::value, "Class T is not a Task");
+			enum { TASK_BLOCK = 1024 };
+			Task* tasks2[TASK_BLOCK];
+			while (count > 0) {
+				const uint32_t tasks_to_add = count > TASK_BLOCK ? TASK_BLOCK : count;
+
+				for (uint32_t i = 0u; i < tasks_to_add; ++i) tasks2[i] = tasks[i].get();
+				Schedule(tasks2, tasks_to_add);
+
+				tasks += tasks_to_add;
+				count -= tasks_to_add;
+			}
+		}
+
+		template<class T>
+		void Schedule(T* tasks, uint32_t count) {
 			static_assert(std::is_base_of<Task, T>::value, "Class T is not a Task");
 			enum { TASK_BLOCK = 1024 };
 			Task* tasks2[TASK_BLOCK];
