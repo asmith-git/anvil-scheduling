@@ -1164,7 +1164,7 @@ EXIT_CONDITION:
 			const uint32_t tasks_to_add = count > TASK_BLOCK ? TASK_BLOCK : count;
 
 			for (uint32_t i = 0u; i < tasks_to_add; ++i) tasks2[i] = tasks[i].get();
-			Schedule(tasks2, count);
+			Schedule(tasks2, tasks_to_add);
 
 			tasks += tasks_to_add;
 			count -= tasks_to_add;

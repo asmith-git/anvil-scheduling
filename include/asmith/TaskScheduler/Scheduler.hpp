@@ -193,6 +193,7 @@ namespace anvil {
 
 		template<class T>
 		inline void Schedule(std::shared_ptr<T>* tasks, uint32_t count) {
+			static_assert(std::is_base_of<Task, T>::value, "Class T is not a Task");
 			Schedule(reinterpret_cast<std::shared_ptr<Task>*>(tasks), count);
 		}
 
