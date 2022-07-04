@@ -416,16 +416,16 @@ namespace anvil {
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		// Make sure children are destroyed first
 		while (_fast_child_count + _fast_recursive_child_count > 0u);
-#endif
-#if ANVIL_TASK_PARENT
+
 		// Remove task from list of children
 		Task* parent = _parent;
 		if (parent) {
+#if ANVIL_TASK_PARENT
 			std::lock_guard<std::mutex> lock(parent->GetMutex());
-
 			auto end = parent->_children.end();
 			auto i = std::find(parent->_children.begin(), end, this);
 			_parent->_children.erase(i);
+#endif
 
 			--_parent->_fast_child_count;
 
