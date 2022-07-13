@@ -125,7 +125,7 @@ namespace anvil {
 			case TaskDebugEvent::EVENT_SCHEDULE:
 				g_task_debug_data.emplace(task_event->task_id, TaskDebugData{ task_event->time, 0.f, 0.f });
 				ss << "Task " << task_event->task_id;
-				if (task_event->parent_id != 0u) ss << " (is a child of task" << task_event->parent_id << ")";
+				if (task_event->parent_id != 0u) ss << " (is a child of task " << task_event->parent_id << ")";
 				ss << " was scheduled on scheduler " << task_event->scheduler_id;
 				break;
 
@@ -1227,19 +1227,7 @@ EXIT_CONDITION:
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
 
-			if (t._state != Task::STATE_INITIALISED) {
-#if ANVIL_DEBUG_TASKS
-				{
-					uint32_t parent_id = 0u;
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-					if (parent) parent_id = parent->_debug_id;
-#endif
-					TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
-					g_debug_event_handler(nullptr, &e);
-				}
-#endif
-				continue;
-			}
+			if (t._state != Task::STATE_INITIALISED) continue;
 
 			// Change state
 			t._state = Task::STATE_SCHEDULED;
@@ -1321,6 +1309,16 @@ EXIT_CONDITION:
 				if (!t.IsReadyToExecute()) {
 					_unready_task_queue.push_back(&t);
 					continue;
+				}
+#endif
+#if ANVIL_DEBUG_TASKS
+				{
+					uint32_t parent_id = 0u;
+#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
+					if (parent) parent_id = parent->_debug_id;
+#endif
+					TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
+					g_debug_event_handler(nullptr, &e);
 				}
 #endif
 
