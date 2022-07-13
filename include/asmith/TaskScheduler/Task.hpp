@@ -25,9 +25,6 @@
 #ifndef ANVIL_SCHEDULER_TASK_HPP
 #define ANVIL_SCHEDULER_TASK_HPP
 
-#if ANVIL_DEBUG_TASKS
-#include <iostream>
-#endif
 #include <atomic>
 #include <stdexcept>
 #include "asmith/TaskScheduler/Scheduler.hpp"
@@ -39,6 +36,64 @@
 #endif
 
 namespace anvil {
+#if ANVIL_DEBUG_TASKS
+	struct ANVIL_DLL_EXPORT SchedulerDebugEvent {
+		enum Type : uint8_t {
+			EVENT_CREATE,
+			EVENT_PAUSE,
+			EVENT_RESUME,
+			EVENT_DESTROY
+		};
+
+		float time;
+		uint32_t thread_id;
+		uint32_t scheduler_id;
+		Type type;
+
+		static SchedulerDebugEvent ANVIL_DLL_EXPORT CreateEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent ANVIL_DLL_EXPORT PauseEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent ANVIL_DLL_EXPORT ResumeEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent ANVIL_DLL_EXPORT DestroyEvent(uint32_t scheduler_id);
+	};
+
+	struct ANVIL_DLL_EXPORT TaskDebugEvent {
+		enum Type : uint8_t {
+			EVENT_CREATE,
+			EVENT_SCHEDULE,
+			EVENT_CANCEL,
+			EVENT_EXECUTE_BEGIN,
+			EVENT_PAUSE,
+			EVENT_RESUME,
+			EVENT_EXECUTE_END,
+			EVENT_DESTROY
+		};
+
+		float time;
+		uint32_t thread_id;
+		uint32_t task_id;
+		union {
+			Task* task; // EVENT_CREATE 
+			struct {
+				uint32_t parent_id;
+				uint32_t scheduler_id;
+			}; // EVENT_SCHEDULE
+			bool will_yield; // EVENT_PAUSE
+		};
+		Type type;
+
+		static TaskDebugEvent ANVIL_DLL_EXPORT CreateEvent(uint32_t task_id, Task* task);
+		static TaskDebugEvent ANVIL_DLL_EXPORT ScheduleEvent(uint32_t task_id, uint32_t parent_id, uint32_t scheduler_id);
+		static TaskDebugEvent ANVIL_DLL_EXPORT CancelEvent(uint32_t task_id);
+		static TaskDebugEvent ANVIL_DLL_EXPORT ExecuteBeginEvent(uint32_t task_id);
+		static TaskDebugEvent ANVIL_DLL_EXPORT PauseEvent(uint32_t task_id, bool will_yield);
+		static TaskDebugEvent ANVIL_DLL_EXPORT ResumeEvent(uint32_t task_id);
+		static TaskDebugEvent ANVIL_DLL_EXPORT ExecuteEndEvent(uint32_t task_id);
+		static TaskDebugEvent ANVIL_DLL_EXPORT DestroyEvent(uint32_t task_id);
+
+		typedef void(*DebugEventHandler)(SchedulerDebugEvent* scheduler_event, TaskDebugEvent* task_event);
+		static void ANVIL_DLL_EXPORT SetDebugEventHandler(DebugEventHandler handler);
+	};
+#endif
 
 	/*!
 		\class Task
@@ -107,8 +162,7 @@ namespace anvil {
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
 #if ANVIL_DEBUG_TASKS
-		float _debug_timer;
-		uint64_t _debug_id;
+		uint32_t _debug_id;
 #endif
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		Task* _parent;
@@ -327,8 +381,6 @@ namespace anvil {
 		void PrintDebugMessage(const char* message) const;
 
 		inline uint64_t GetDebugID() const { return _debug_id; }
-
-		static void SetDebugStream(std::ostream&);
 #endif
 
 	};

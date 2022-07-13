@@ -24,10 +24,6 @@
 
 #include "asmith/TaskScheduler/SchedulerExamples.hpp"
 
-#if ANVIL_DEBUG_TASKS
-#include <sstream>
-#endif
-
 namespace anvil {
 
 	// ExampleThread
@@ -45,9 +41,6 @@ namespace anvil {
 
 	bool ExampleThread::Start() {
 		if (_comm_flag != COMM_EXIT) return false;
-#if ANVIL_DEBUG_TASKS
-		_scheduler.PrintDebugMessage("Scheduler %scheduler% launching new thread");
-#endif
 		_comm_flag = COMM_EXECUTE;
 		_thread = std::thread([this]()->void {
 
@@ -57,24 +50,15 @@ namespace anvil {
 				switch (_comm_flag) {
 				case COMM_DISABLED:
 				{
-#if ANVIL_DEBUG_TASKS
-					_scheduler.PrintDebugMessage("Thread %thread% put to sleep because it is disabled");
-#endif
 					std::unique_lock<std::mutex> lock(_scheduler._mutex);
 					_scheduler._task_queue_update.wait(lock);
 				}
 				break;
 				case COMM_EXECUTE:
-#if ANVIL_DEBUG_TASKS
-					_scheduler.PrintDebugMessage("Thread %thread% looking for tasks to execute");
-#endif
 					// Execute tasks until the flag changes
 					_scheduler.Yield([this]()->bool { return _comm_flag != COMM_EXECUTE; }, 1000u);
 					break;
 				case COMM_EXIT:
-#if ANVIL_DEBUG_TASKS
-					_scheduler.PrintDebugMessage("Thread %thread% terminating");
-#endif
 					// Exit from the function (terminate thread)
 					return;
 				}
@@ -86,9 +70,6 @@ namespace anvil {
 
 	bool ExampleThread::Stop() {
 		if (!_thread.joinable()) return false;
-#if ANVIL_DEBUG_TASKS
-		_scheduler.PrintDebugMessage(("Scheduler %scheduler% requesting termination of thread " + (std::ostringstream() << _thread.get_id()).str()).c_str());
-#endif
 		_comm_flag = COMM_EXIT;
 		_scheduler._task_queue_update.notify_all(); // Wake threads
 		_thread.join();
@@ -97,9 +78,6 @@ namespace anvil {
 
 	bool ExampleThread::Pause() {
 		if (!_thread.joinable()) return false;
-#if ANVIL_DEBUG_TASKS
-		_scheduler.PrintDebugMessage(("Scheduler %scheduler% requesting pause of thread " + (std::ostringstream() << _thread.get_id()).str()).c_str());
-#endif
 		_comm_flag = COMM_DISABLED;
 		// No reason to wake threads to tell them they need to sleep
 		return true;
@@ -107,9 +85,6 @@ namespace anvil {
 
 	bool ExampleThread::Resume() {
 		if (!_thread.joinable()) return false;
-#if ANVIL_DEBUG_TASKS
-		_scheduler.PrintDebugMessage(("Scheduler %scheduler% requesting resume of thread " + (std::ostringstream() << _thread.get_id()).str()).c_str());
-#endif
 		_comm_flag = COMM_EXECUTE;
 		_scheduler._task_queue_update.notify_all(); // Wake threads
 		return true;

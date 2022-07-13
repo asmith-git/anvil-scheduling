@@ -78,6 +78,9 @@ namespace anvil {
 		SchedulerDebugData _scheduler_debug;
 		std::condition_variable _task_queue_update;
 		std::mutex _mutex;
+#if ANVIL_DEBUG_TASKS
+		uint32_t _debug_id;
+#endif
 		bool _no_execution_on_wait;
 
 		bool TryToExecuteTask() throw();
