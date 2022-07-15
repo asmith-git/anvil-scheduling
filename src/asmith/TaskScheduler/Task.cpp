@@ -22,6 +22,7 @@
 
 // For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
 
+#include "asmith/TaskScheduler/Core.hpp"
 #if ANVIL_DEBUG_TASKS
 	#include <cctype>
 	#include <chrono>
@@ -33,7 +34,6 @@
 #include <atomic>
 #include <algorithm>
 #include <list>
-#include "asmith/TaskScheduler/Core.hpp"
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
 
@@ -1444,7 +1444,7 @@ EXIT_CONDITION:
 	}
 
 	void TaskDebugEvent::SetDebugEventHandler(DebugEventHandler handler) {
-		if (handler = nullptr) handler = DefaultEventHandler;
+		if (handler == nullptr) handler = DefaultEventHandler;
 		g_debug_event_handler = handler;
 	}
 	// SchedulerDebugEvent

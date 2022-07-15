@@ -50,10 +50,10 @@ namespace anvil {
 		uint32_t scheduler_id;
 		Type type;
 
-		static SchedulerDebugEvent ANVIL_DLL_EXPORT CreateEvent(uint32_t scheduler_id);
-		static SchedulerDebugEvent ANVIL_DLL_EXPORT PauseEvent(uint32_t scheduler_id);
-		static SchedulerDebugEvent ANVIL_DLL_EXPORT ResumeEvent(uint32_t scheduler_id);
-		static SchedulerDebugEvent ANVIL_DLL_EXPORT DestroyEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent CreateEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent PauseEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent ResumeEvent(uint32_t scheduler_id);
+		static SchedulerDebugEvent DestroyEvent(uint32_t scheduler_id);
 	};
 
 	struct ANVIL_DLL_EXPORT TaskDebugEvent {
@@ -81,17 +81,17 @@ namespace anvil {
 		};
 		Type type;
 
-		static TaskDebugEvent ANVIL_DLL_EXPORT CreateEvent(uint32_t task_id, Task* task);
-		static TaskDebugEvent ANVIL_DLL_EXPORT ScheduleEvent(uint32_t task_id, uint32_t parent_id, uint32_t scheduler_id);
-		static TaskDebugEvent ANVIL_DLL_EXPORT CancelEvent(uint32_t task_id);
-		static TaskDebugEvent ANVIL_DLL_EXPORT ExecuteBeginEvent(uint32_t task_id);
-		static TaskDebugEvent ANVIL_DLL_EXPORT PauseEvent(uint32_t task_id, bool will_yield);
-		static TaskDebugEvent ANVIL_DLL_EXPORT ResumeEvent(uint32_t task_id);
-		static TaskDebugEvent ANVIL_DLL_EXPORT ExecuteEndEvent(uint32_t task_id);
-		static TaskDebugEvent ANVIL_DLL_EXPORT DestroyEvent(uint32_t task_id);
+		static TaskDebugEvent CreateEvent(uint32_t task_id, Task* task);
+		static TaskDebugEvent ScheduleEvent(uint32_t task_id, uint32_t parent_id, uint32_t scheduler_id);
+		static TaskDebugEvent CancelEvent(uint32_t task_id);
+		static TaskDebugEvent ExecuteBeginEvent(uint32_t task_id);
+		static TaskDebugEvent PauseEvent(uint32_t task_id, bool will_yield);
+		static TaskDebugEvent ResumeEvent(uint32_t task_id);
+		static TaskDebugEvent ExecuteEndEvent(uint32_t task_id);
+		static TaskDebugEvent DestroyEvent(uint32_t task_id);
 
 		typedef void(*DebugEventHandler)(SchedulerDebugEvent* scheduler_event, TaskDebugEvent* task_event);
-		static void ANVIL_DLL_EXPORT SetDebugEventHandler(DebugEventHandler handler);
+		static void SetDebugEventHandler(DebugEventHandler handler);
 	};
 #endif
 
