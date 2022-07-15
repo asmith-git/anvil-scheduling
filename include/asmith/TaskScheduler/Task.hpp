@@ -151,6 +151,7 @@ namespace anvil {
 
 		void SetException(std::exception_ptr exception);
 
+		mutable std::mutex _lock;
 #if ANVIL_TASK_PARENT
 		std::vector<Task*> _children;
 #endif
@@ -166,11 +167,10 @@ namespace anvil {
 #endif
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		Task* _parent;
-		std::atomic_uint16_t _fast_child_count;
-		std::atomic_uint16_t _fast_recursive_child_count;
+		uint16_t _fast_child_count;
+		uint16_t _fast_recursive_child_count;
 		uint16_t _nesting_depth;
 #endif
-		std::mutex _lock;
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
 		State _state;						//!< Stores the current state of the task
 		struct {
@@ -257,8 +257,6 @@ namespace anvil {
 		*/
 		virtual ~Task();
 
-		std::mutex& GetMutex() const;
-
 		/*!
 			\brief Wait for the task to complete.
 			\detail If the task is not complete then Task::Yield will be called.
@@ -316,8 +314,9 @@ namespace anvil {
 		*/
 		inline std::vector<Task*> GetChildren() const throw() {
 #if ANVIL_TASK_PARENT
-			std::lock_guard<std::mutex> lock(GetMutex());
-			return _children;
+			std::lock_guard<std::mutex> lock(_lock);
+			std::vector<Task*> tmp = _children;
+			return tmp;
 #else
 			return std::vector<Task*>();
 #endif

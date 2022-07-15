@@ -64,7 +64,6 @@ namespace anvil {
 		return FormatClassName(typeid(*task).name());
 	}
 
-#pragma optimize ("", off)
 	static void DefaultEventHandler(SchedulerDebugEvent* scheduler_event, TaskDebugEvent* task_event) {
 		struct TaskDebugData {
 			Task* task;
@@ -88,7 +87,7 @@ namespace anvil {
 		static std::map<uint32_t, TaskDebugData> g_task_debug_data;
 		static std::map<uint32_t, SchedulerDebugData> g_scheduler_debug_data;
 
-		//std::stringstream ss;
+		std::stringstream ss;
 
 		if (scheduler_event) {
 			std::lock_guard<std::mutex> lock(g_debug_lock);
@@ -97,36 +96,36 @@ namespace anvil {
 			switch (scheduler_event->type) {
 			case SchedulerDebugEvent::EVENT_CREATE:
 				g_scheduler_debug_data.emplace(scheduler_event->scheduler_id, SchedulerDebugData{ 0.f });
-				//ss << "Scheduler " << scheduler_event->scheduler_id << " was created";
+				ss << "Scheduler " << scheduler_event->scheduler_id << " was created";
 				break;
 
 			case SchedulerDebugEvent::EVENT_PAUSE:
 				{
 					SchedulerDebugData& debug = g_scheduler_debug_data[scheduler_event->scheduler_id];
 					debug.pause_time = scheduler_event->time;
-					//ss << "Scheduler " << scheduler_event->scheduler_id << " pauses execution";
+					ss << "Scheduler " << scheduler_event->scheduler_id << " pauses execution";
 				}
 				break;
 
 			case SchedulerDebugEvent::EVENT_RESUME:
 				{
 					SchedulerDebugData& debug = g_scheduler_debug_data[scheduler_event->scheduler_id];
-					//ss << "Scheduler " << scheduler_event->scheduler_id << " resumes execution after sleeping for " << (scheduler_event->time - debug.pause_time) << " ms";
+					ss << "Scheduler " << scheduler_event->scheduler_id << " resumes execution after sleeping for " << (scheduler_event->time - debug.pause_time) << " ms";
 				}
 				break;
 
 			case SchedulerDebugEvent::EVENT_DESTROY:
 				g_scheduler_debug_data.erase(g_scheduler_debug_data.find(scheduler_event->scheduler_id));
-				//ss << "Scheduler " << scheduler_event->scheduler_id << " is destroyed";
+				ss << "Scheduler " << scheduler_event->scheduler_id << " is destroyed";
 				break;
 			};
 
-			//ss << " on thread " << scheduler_event->thread_id;
+			ss << " on thread " << scheduler_event->thread_id;
 		}
 
 		if(task_event) {
 			std::lock_guard<std::mutex> lock(g_debug_lock);
-			//ss << task_event->time << " ms : ";
+			ss << task_event->time << " ms : ";
 
 			switch(task_event->type) {
 			case TaskDebugEvent::EVENT_CREATE:
@@ -135,7 +134,7 @@ namespace anvil {
 					debug.task = task_event->task;
 					g_task_debug_data.emplace(task_event->task_id, debug);
 				}
-				//ss << "Task " << task_event->task_id << " was created, type is " << GetLongName(task_event->task);
+				ss << "Task " << task_event->task_id << " was created, type is " << GetLongName(task_event->task);
 				break;
 
 			case TaskDebugEvent::EVENT_SCHEDULE:
@@ -143,14 +142,14 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.schedule_time = task_event->time;
 				}
-				//ss << "Task " << task_event->task_id;
-				//if (task_event->parent_id != 0u) ss << " (is a child of task " << task_event->parent_id << ")";
-				//ss << " was scheduled on scheduler " << task_event->scheduler_id;
+				ss << "Task " << task_event->task_id;
+				if (task_event->parent_id != 0u) ss << " (is a child of task " << task_event->parent_id << ")";
+				ss << " was scheduled on scheduler " << task_event->scheduler_id;
 				break;
 
 			case TaskDebugEvent::EVENT_CANCEL:
 				g_task_debug_data.erase(g_task_debug_data.find(task_event->task_id));
-				//ss << "Task " << task_event->task_id << " was canceled";
+				ss << "Task " << task_event->task_id << " was canceled";
 				break;
 
 			case TaskDebugEvent::EVENT_EXECUTE_BEGIN:
@@ -158,7 +157,7 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.execution_start_time = task_event->time;
 
-					//ss << "Task " << task_event->task_id << " begins execution after being scheduled for " << (task_event->time - debug.schedule_time) << " ms";
+					ss << "Task " << task_event->task_id << " begins execution after being scheduled for " << (task_event->time - debug.schedule_time) << " ms";
 				}
 				break;
 
@@ -167,9 +166,9 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.pause_time = task_event->time;
 
-					//ss << "Task " << task_event->task_id << " pauses after executing for " << (task_event->time - debug.execution_start_time) << " ms";
-					//if (task_event->will_yield) ss << " and will yield";
-					//else ss << " without yielding";
+					ss << "Task " << task_event->task_id << " pauses after executing for " << (task_event->time - debug.execution_start_time) << " ms";
+					if (task_event->will_yield) ss << " and will yield";
+					else ss << " without yielding";
 				}
 				break;
 
@@ -178,7 +177,7 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.pause_time = task_event->time;
 
-					//ss << "Task " << task_event->task_id << " resumes execution after being paused for " << (task_event->time - debug.pause_time) << " ms";
+					ss << "Task " << task_event->task_id << " resumes execution after being paused for " << (task_event->time - debug.pause_time) << " ms";
 				}
 				break;
 
@@ -187,29 +186,25 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.execution_end_time = task_event->time;
 
-					//ss << "Task " << task_event->task_id << " completes execution after " << (task_event->time - debug.execution_start_time) << " ms";
+					ss << "Task " << task_event->task_id << " completes execution after " << (task_event->time - debug.execution_start_time) << " ms";
 				}
 				break;
 
 			case TaskDebugEvent::EVENT_DESTROY:
 				{
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
-					if (debug.execution_end_time == 0.f) {
-						throw 0;
-					}
 				}
 				g_task_debug_data.erase(g_task_debug_data.find(task_event->task_id));
-				//ss << "Task " << task_event->task_id << " is destroyed";
+				ss << "Task " << task_event->task_id << " is destroyed";
 				break;
 			};
 
-			//ss << " on thread " << task_event->thread_id;
+			ss << " on thread " << task_event->thread_id;
 		}
 
-		//ss << "\n";
-		//std::cerr << ss.str();
+		ss << "\n";
+		std::cerr << ss.str();
 	}
-#pragma optimize ("", on)
 
 	static TaskDebugEvent::DebugEventHandler g_debug_event_handler = DefaultEventHandler;
 #endif
@@ -573,16 +568,21 @@ namespace anvil {
 		// Remove task from list of children
 		Task* parent = _parent;
 		if (parent) {
+			{
+				std::lock_guard<std::mutex> lock(parent->_lock);
 #if ANVIL_TASK_PARENT
-			std::lock_guard<std::mutex> lock(parent->GetMutex());
-			auto end = parent->_children.end();
-			auto i = std::find(parent->_children.begin(), end, this);
-			_parent->_children.erase(i);
+				auto end = parent->_children.end();
+				auto i = std::find(parent->_children.begin(), end, this);
+				_parent->_children.erase(i);
 #endif
 
-			--_parent->_fast_child_count;
+				--_parent->_fast_child_count;
+				--parent->_fast_recursive_child_count;
+				parent = parent->_parent;
+			}
 
 			while (parent) {
+				std::lock_guard<std::mutex> lock(parent->_lock);
 				--parent->_fast_recursive_child_count;
 				parent = parent->_parent;
 			}
@@ -595,16 +595,6 @@ namespace anvil {
 		}
 #endif
 		//! \bug If the task is scheduled it must be removed from the scheduler
-	}
-
-	std::mutex& Task::GetMutex() const {
-		Scheduler* scheduler = _scheduler;
-		if (scheduler) {
-			return scheduler->_mutex;
-		} else {
-			static std::mutex g_task_mutex;
-			return g_task_mutex;
-		}
 	}
 
 	Task* Task::GetCurrentlyExecutingTask() {
@@ -1285,14 +1275,19 @@ EXIT_CONDITION:
 			// Update the child / parent relationship between tasks
 			t._parent = parent;
 			if (parent) {
+				anvil::Task* parent2;
+				{
+					std::lock_guard<std::mutex> parent_lock(parent->_lock);
 #if ANVIL_TASK_PARENT
-				parent->_children.push_back(tasks[i]);
+					parent->_children.push_back(tasks[i]);
 #endif
-				++t._nesting_depth;
-				++parent->_fast_child_count;
-
-				anvil::Task* parent2 = parent;
+					++t._nesting_depth;
+					++parent->_fast_child_count;
+					++parent->_fast_recursive_child_count;
+					parent2 = parent->_parent;
+				}
 				while (parent2) {
+					std::lock_guard<std::mutex> parent2_lock(parent2->_lock);
 					++t._nesting_depth;
 					++parent2->_fast_recursive_child_count;
 					parent2 = parent2->_parent;
