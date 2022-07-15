@@ -184,14 +184,26 @@ namespace anvil {
 			Schedule(&t, 1u);
 		}
 
-		inline void Schedule(std::unique_ptr<Task>& task) {
-			Task* t = task.get();
-			Schedule(&t, 1u);
+		template<class T>
+		inline void Schedule(const std::unique_ptr<T>& task) {
+			static_assert(std::is_base_of<Task, T>::value, "Class T is not a Task");
+			Schedule(*task);
 		}
 
-		inline void Schedule(std::shared_ptr<Task>& task) {
-			Task* t = task.get();
-			Schedule(&t, 1u);
+		template<class T>
+		inline void Schedule(const std::shared_ptr<T>& task) {
+			static_assert(std::is_base_of<Task, T>::value, "Class T is not a Task");
+			Schedule(*task);
+		}
+
+		template<>
+		inline void Schedule<Task>(const std::unique_ptr<Task>& task) {
+			Schedule(*task);
+		}
+
+		template<>
+		inline void Schedule<Task>(const std::shared_ptr<Task>& task) {
+			Schedule(*task);
 		}
 
 		template<class T>
