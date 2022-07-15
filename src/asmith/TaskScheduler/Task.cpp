@@ -64,11 +64,22 @@ namespace anvil {
 		return FormatClassName(typeid(*task).name());
 	}
 
+#pragma optimize ("", off)
 	static void DefaultEventHandler(SchedulerDebugEvent* scheduler_event, TaskDebugEvent* task_event) {
 		struct TaskDebugData {
+			Task* task;
 			float schedule_time;
 			float execution_start_time;
+			float execution_end_time;
 			float pause_time;
+
+			TaskDebugData() :
+				task(nullptr),
+				schedule_time(0.f),
+				execution_start_time(0.f),
+				execution_end_time(0.f),
+				pause_time(0.f)
+			{}
 		};
 		struct SchedulerDebugData {
 			float pause_time;
@@ -77,61 +88,69 @@ namespace anvil {
 		static std::map<uint32_t, TaskDebugData> g_task_debug_data;
 		static std::map<uint32_t, SchedulerDebugData> g_scheduler_debug_data;
 
-		std::stringstream ss;
+		//std::stringstream ss;
 
 		if (scheduler_event) {
 			std::lock_guard<std::mutex> lock(g_debug_lock);
-			ss << scheduler_event->time << " ms : ";
+			//ss << scheduler_event->time << " ms : ";
 
 			switch (scheduler_event->type) {
 			case SchedulerDebugEvent::EVENT_CREATE:
 				g_scheduler_debug_data.emplace(scheduler_event->scheduler_id, SchedulerDebugData{ 0.f });
-				ss << "Scheduler " << scheduler_event->scheduler_id << " was created";
+				//ss << "Scheduler " << scheduler_event->scheduler_id << " was created";
 				break;
 
 			case SchedulerDebugEvent::EVENT_PAUSE:
 				{
 					SchedulerDebugData& debug = g_scheduler_debug_data[scheduler_event->scheduler_id];
 					debug.pause_time = scheduler_event->time;
-					ss << "Scheduler " << scheduler_event->scheduler_id << " pauses execution";
+					//ss << "Scheduler " << scheduler_event->scheduler_id << " pauses execution";
 				}
 				break;
 
 			case SchedulerDebugEvent::EVENT_RESUME:
 				{
 					SchedulerDebugData& debug = g_scheduler_debug_data[scheduler_event->scheduler_id];
-					ss << "Scheduler " << scheduler_event->scheduler_id << " resumes execution after sleeping for " << (scheduler_event->time - debug.pause_time) << " ms";
+					//ss << "Scheduler " << scheduler_event->scheduler_id << " resumes execution after sleeping for " << (scheduler_event->time - debug.pause_time) << " ms";
 				}
 				break;
 
 			case SchedulerDebugEvent::EVENT_DESTROY:
 				g_scheduler_debug_data.erase(g_scheduler_debug_data.find(scheduler_event->scheduler_id));
-				ss << "Scheduler " << scheduler_event->scheduler_id << " is destroyed";
+				//ss << "Scheduler " << scheduler_event->scheduler_id << " is destroyed";
 				break;
 			};
 
-			ss << " on thread " << scheduler_event->thread_id;
+			//ss << " on thread " << scheduler_event->thread_id;
 		}
 
 		if(task_event) {
 			std::lock_guard<std::mutex> lock(g_debug_lock);
-			ss << task_event->time << " ms : ";
+			//ss << task_event->time << " ms : ";
 
 			switch(task_event->type) {
 			case TaskDebugEvent::EVENT_CREATE:
-				ss << "Task " << task_event->task_id << " was created, type is " << GetLongName(task_event->task);
+				{
+					TaskDebugData debug;
+					debug.task = task_event->task;
+					g_task_debug_data.emplace(task_event->task_id, debug);
+				}
+				//ss << "Task " << task_event->task_id << " was created, type is " << GetLongName(task_event->task);
 				break;
 
 			case TaskDebugEvent::EVENT_SCHEDULE:
-				g_task_debug_data.emplace(task_event->task_id, TaskDebugData{ task_event->time, 0.f, 0.f });
-				ss << "Task " << task_event->task_id;
-				if (task_event->parent_id != 0u) ss << " (is a child of task " << task_event->parent_id << ")";
-				ss << " was scheduled on scheduler " << task_event->scheduler_id;
+				{
+					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
+					debug.schedule_time = task_event->time;
+				}
+				//ss << "Task " << task_event->task_id;
+				//if (task_event->parent_id != 0u) ss << " (is a child of task " << task_event->parent_id << ")";
+				//ss << " was scheduled on scheduler " << task_event->scheduler_id;
 				break;
 
 			case TaskDebugEvent::EVENT_CANCEL:
 				g_task_debug_data.erase(g_task_debug_data.find(task_event->task_id));
-				ss << "Task " << task_event->task_id << " was canceled";
+				//ss << "Task " << task_event->task_id << " was canceled";
 				break;
 
 			case TaskDebugEvent::EVENT_EXECUTE_BEGIN:
@@ -139,7 +158,7 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.execution_start_time = task_event->time;
 
-					ss << "Task " << task_event->task_id << " begins execution after being scheduled for " << (task_event->time - debug.schedule_time) << " ms";
+					//ss << "Task " << task_event->task_id << " begins execution after being scheduled for " << (task_event->time - debug.schedule_time) << " ms";
 				}
 				break;
 
@@ -148,9 +167,9 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.pause_time = task_event->time;
 
-					ss << "Task " << task_event->task_id << " pauses after executing for " << (task_event->time - debug.execution_start_time) << " ms";
-					if (task_event->will_yield) ss << " and will yield";
-					else ss << " without yielding";
+					//ss << "Task " << task_event->task_id << " pauses after executing for " << (task_event->time - debug.execution_start_time) << " ms";
+					//if (task_event->will_yield) ss << " and will yield";
+					//else ss << " without yielding";
 				}
 				break;
 
@@ -159,31 +178,38 @@ namespace anvil {
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
 					debug.pause_time = task_event->time;
 
-					ss << "Task " << task_event->task_id << " resumes execution after being paused for " << (task_event->time - debug.pause_time) << " ms";
+					//ss << "Task " << task_event->task_id << " resumes execution after being paused for " << (task_event->time - debug.pause_time) << " ms";
 				}
 				break;
 
 			case TaskDebugEvent::EVENT_EXECUTE_END:
 				{
 					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
-					debug.pause_time = task_event->time;
+					debug.execution_end_time = task_event->time;
 
-					ss << "Task " << task_event->task_id << " completes execution after " << (task_event->time - debug.execution_start_time) << " ms";
+					//ss << "Task " << task_event->task_id << " completes execution after " << (task_event->time - debug.execution_start_time) << " ms";
 				}
 				break;
 
 			case TaskDebugEvent::EVENT_DESTROY:
+				{
+					TaskDebugData& debug = g_task_debug_data[task_event->task_id];
+					if (debug.execution_end_time == 0.f) {
+						throw 0;
+					}
+				}
 				g_task_debug_data.erase(g_task_debug_data.find(task_event->task_id));
-				ss << "Task " << task_event->task_id << " is destroyed";
+				//ss << "Task " << task_event->task_id << " is destroyed";
 				break;
 			};
 
-			ss << " on thread " << task_event->thread_id;
+			//ss << " on thread " << task_event->thread_id;
 		}
 
-		ss << "\n";
-		std::cerr << ss.str();
+		//ss << "\n";
+		//std::cerr << ss.str();
 	}
+#pragma optimize ("", on)
 
 	static TaskDebugEvent::DebugEventHandler g_debug_event_handler = DefaultEventHandler;
 #endif
@@ -309,12 +335,6 @@ namespace anvil {
 #endif
 
 		inline void OnTaskExecuteBegin(Task& task) {
-#if ANVIL_DEBUG_TASKS
-			{
-				TaskDebugEvent e = TaskDebugEvent::ExecuteBeginEvent(task._debug_id);
-				g_debug_event_handler(nullptr, &e);
-			}
-#endif
 			_tasks.push_back(TaskThreadLocalData());
 			TaskThreadLocalData* data = &_tasks.back();
 			data->task = &task;
@@ -377,12 +397,6 @@ namespace anvil {
 				_current_task = &_tasks.back();
 			}
 
-#endif
-#if ANVIL_DEBUG_TASKS
-			{
-				TaskDebugEvent e = TaskDebugEvent::ExecuteEndEvent(task._debug_id);
-				g_debug_event_handler(nullptr, &e);
-			}
 #endif
 		}
 
@@ -528,9 +542,12 @@ namespace anvil {
 		_fast_recursive_child_count(0u),
 		_nesting_depth(0u),
 #endif
-		_wait_flag(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
-		_state(STATE_INITIALISED)
+		_state(STATE_INITIALISED),
+		_scheduled_flag(0u),
+		_execute_begin_flag(0u),
+		_execute_end_flag(0u),
+		_wait_flag(0u)
 	{
 #if ANVIL_DEBUG_TASKS
 		_debug_id = g_task_debug_id++;
@@ -542,6 +559,13 @@ namespace anvil {
 	}
 
 	Task::~Task() {
+		{
+			std::lock_guard<std::mutex> lock(_lock);
+			while (_state == STATE_SCHEDULED || _state == STATE_EXECUTING || _state == STATE_BLOCKED) {
+				// Wait for task to complete
+			}
+		}
+
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		// Make sure children are destroyed first
 		while (_fast_child_count + _fast_recursive_child_count > 0u);
@@ -617,7 +641,7 @@ namespace anvil {
 			if (_state != STATE_SCHEDULED) return false;
 
 			// Remove the task from the queue
-			for(auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
+			for (auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
 				if (*i == this) {
 					scheduler->_task_queue.erase(i);
 					notify = true;
@@ -633,7 +657,9 @@ namespace anvil {
 				}
 			}
 #endif
-
+		}
+		{
+			std::lock_guard<std::mutex> task_lock(_lock);
 #if ANVIL_DEBUG_TASKS
 			{
 				TaskDebugEvent e = TaskDebugEvent::CancelEvent(_debug_id);
@@ -653,14 +679,8 @@ namespace anvil {
 			// State change and cleanup
 			_state = Task::STATE_CANCELED;
 			_scheduler = INVALID_SCHEDULER;
-		}
 
-		// Canceled successfully
-		try {
-			uint8_t expected = 0u;
-			if (!_wait_flag.compare_exchange_strong(expected, 1u, std::memory_order_acq_rel)) throw std::runtime_error("Task::Cancel : Memory anomaly detected on wait flag");
-		} catch (...) {
-			SetException(std::current_exception());
+			_wait_flag = 1u;
 		}
 
 		// Notify anythign waiting for changes to the task queue
@@ -684,8 +704,9 @@ namespace anvil {
 #endif
 
 		const auto YieldCondition = [this]()->bool {
-			uint8_t expected = 1u;
-			return _wait_flag.compare_exchange_strong(expected, 2u, std::memory_order_acq_rel);
+			std::lock_guard<std::mutex> task_lock(_lock);
+			if (_state != STATE_CANCELED && _state != STATE_COMPLETE) return false;
+			return _wait_flag == 1u;
 		};
 
 		if (will_yield) {
@@ -785,6 +806,14 @@ HANDLE_ERROR:
 			CatchException(std::move(std::current_exception()), false);
 		}
 
+		_execute_begin_flag = 1;
+#if ANVIL_DEBUG_TASKS
+		{
+			TaskDebugEvent e = TaskDebugEvent::ExecuteBeginEvent(_debug_id);
+			g_debug_event_handler(nullptr, &e);
+		}
+#endif
+
 		// Switch control to the task's fiber
 #if ANVIL_TASK_FIBERS
 		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this));
@@ -842,10 +871,12 @@ HANDLE_ERROR:
 				if (task._state != Task::STATE_CANCELED) {
 
 					// Execute the task
-					task._state = Task::STATE_EXECUTING;
+					{
+						std::lock_guard<std::mutex> task_lock(task._lock);
+						task._state = Task::STATE_EXECUTING;
+					}
 					try {
 						task.OnExecution();
-						task._state = Task::STATE_COMPLETE;
 					}
 					catch (std::exception& e) {
 						CatchException(std::move(std::current_exception()), true);
@@ -853,21 +884,28 @@ HANDLE_ERROR:
 						CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
 					}
 				}
+				{
+					std::lock_guard<std::mutex> task_lock(task._lock);
 
-				// Post-execution cleanup
-				task._scheduler = INVALID_SCHEDULER;
+					// Post-execution cleanup
+					task._scheduler = INVALID_SCHEDULER;
 
-				try {
-					g_thread_local_data.OnTaskExecuteEnd(task);
-				} catch (std::exception& e) {
-					CatchException(std::move(std::current_exception()), false);
-				}
+					try {
+						g_thread_local_data.OnTaskExecuteEnd(task);
+					} catch (std::exception& e) {
+						CatchException(std::move(std::current_exception()), false);
+					}
 
-				try {
-					uint8_t expected = 0u;
-					if (!task._wait_flag.compare_exchange_strong(expected, 1u, std::memory_order_acq_rel)) throw std::runtime_error("Task::Execute : Memory anomaly detected on write flag");
-				} catch (...) {
-					CatchException(std::move(std::current_exception()), false);
+					task._execute_end_flag = 1;
+#if ANVIL_DEBUG_TASKS
+					{
+						TaskDebugEvent e = TaskDebugEvent::ExecuteEndEvent(task._debug_id);
+						g_debug_event_handler(nullptr, &e);
+					}
+#endif
+					task._state = Task::STATE_COMPLETE;
+
+					task._wait_flag = 1u;
 				}
 
 
@@ -1226,10 +1264,12 @@ EXIT_CONDITION:
 		// Initial error checking and initialisation
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
+			std::lock_guard<std::mutex> task_lock(t._lock);
 
 			if (t._state != Task::STATE_INITIALISED) continue;
 
 			// Change state
+			t._scheduled_flag = 1u;
 			t._state = Task::STATE_SCHEDULED;
 			t._wait_flag = 0u;
 

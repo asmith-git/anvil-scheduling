@@ -170,10 +170,15 @@ namespace anvil {
 		std::atomic_uint16_t _fast_recursive_child_count;
 		uint16_t _nesting_depth;
 #endif
-
+		std::mutex _lock;
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
-		std::atomic_uint8_t _wait_flag;		//!< Set to 1 when it is okay to exit out of Task::Wait()
 		State _state;						//!< Stores the current state of the task
+		struct {
+			uint8_t _scheduled_flag : 1;		//!< Set to 1 when the task has been scheduled
+			uint8_t _execute_begin_flag : 1;	//!< Set to 1 when the task begins execution
+			uint8_t _execute_end_flag : 1;		//!< Set to 1 when the task completes execution
+			uint8_t _wait_flag : 1;				//!< Set to 1 when it is okay to exit out of Task::Wait()
+		};
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
