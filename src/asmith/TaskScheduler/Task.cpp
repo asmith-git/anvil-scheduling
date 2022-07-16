@@ -922,22 +922,19 @@ HANDLE_ERROR:
 		// Try to resume execution of an existing task
 		if(g_thread_additional_data.SwitchToAnyTask()) return true;
 
-		Task* tasks[1u];
-		uint32_t task_count = 1u;
-		RemoveNextTaskFromQueue(tasks, task_count);
+		enum { MAX_TASKS = 1u };
 #else
-		// Try to start the execution of a new task
 		enum { MAX_TASKS = 32u };
+#endif
+		// Try to start the execution of a new task
 		Task* tasks[MAX_TASKS];
 		uint32_t task_count = static_cast<uint32_t>(_task_queue.size()) / _scheduler_debug.total_thread_count;
 		if (task_count < 1) task_count = 1u;
 		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
 		RemoveNextTaskFromQueue(tasks, task_count);
-#endif
 
 		// If there is a task available then execute it
 		if (task_count > 0) {
-			ThreadDebugData* debug_data = GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 
 			for (uint32_t i = 0u; i < task_count; ++i) {
 				tasks[i]->Execute();
