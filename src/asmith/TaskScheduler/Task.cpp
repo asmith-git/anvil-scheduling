@@ -207,221 +207,234 @@ namespace anvil {
 	}
 
 	static TaskDebugEvent::DebugEventHandler g_debug_event_handler = DefaultEventHandler;
-#endif
+#endif	
+	
+#pragma optimize("", off)
 
 	struct TaskThreadLocalData {
-		Task* task;
-		const std::function<bool(void)>* yield_condition;
-
-		TaskThreadLocalData() :
-			task(nullptr),
-			yield_condition(nullptr)
-		{}
-	};
-
-	struct FiberData {
 #if ANVIL_TASK_FIBERS
-		LPVOID fiber;
 #else
-		void* fiber;
+		std::vector<Task*> task_stack;
 #endif
-		Task* task;
-
-		FiberData() :
-			fiber(nullptr),
-			task(nullptr)
-		{}
-	};
-
-	class _TaskThreadLocalData {
-	private:
-		enum { MAX_NESTED_TASKS = 256u };
-
-#if ANVIL_TASK_FIBERS
-		LPVOID _fiber;
-#endif
-		std::list<FiberData> _fibers;
-		std::list<TaskThreadLocalData> _tasks;
-		std::vector<TaskThreadLocalData*> _tasks_by_priority;
-		TaskThreadLocalData* _current_task;
-
-		FiberData* AllocateFiber() {
-			// For for an unused fiber
-			for (FiberData& fiber : _fibers) {
-				if (fiber.task == nullptr) {
-					return &fiber;
-				}
-			}
-
-			// Allocate a new fiber
-			_fibers.push_back(std::move(FiberData()));
-			FiberData* fiber = &_fibers.back();
-#if ANVIL_TASK_FIBERS
-			fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber);
-#endif
-			return fiber;
-		}
-
-		void DeallocateFiber(FiberData* fiber) {
-#if ANVIL_TASK_FIBERS
-			fiber->task = nullptr;
-#endif
-		}
-	public:
 		uint32_t scheduler_index;
 		bool is_worker_thread;
-
-		_TaskThreadLocalData() :
-#if ANVIL_TASK_FIBERS
-			_fiber(nullptr),
-#endif
-			_current_task(nullptr),
-			scheduler_index(UINT32_MAX),
-			is_worker_thread(false)
-		{
-#if ANVIL_TASK_FIBERS
-			_fiber = ConvertThreadToFiber(nullptr);
-#endif
-		}
-
-		~_TaskThreadLocalData() {
-#if ANVIL_TASK_FIBERS
-			// Delete old fibers
-			for (FiberData& fiber : _fibers) {
-				DeleteFiber(fiber.fiber);
-			}
-#endif
-			_fibers.clear();
-		}
-
-		void SwitchToMainFiber() {
-			// Are we currently executing the main fiber?
-			if (_current_task == nullptr) return;
-
-			// Switch to it
-#if ANVIL_TASK_FIBERS
-			_current_task = nullptr;
-			SwitchToFiber(_fiber);
-#endif
-		}
-
-#if ANVIL_TASK_FIBERS
-		bool SwitchToTask(TaskThreadLocalData& task) {
-			if (&task == _current_task) return false;
-
-			// If the task is able to execute
-			if (task.yield_condition == nullptr || (*task.yield_condition)()) {
-				_current_task = &task;
-				SwitchToFiber(task.task->_fiber);
-				return true;
-			}
-
-			return false;
-		}
-
-		bool SwitchToAnyTask() {
-			// Try to execute a task that is ready to resume
-			for (TaskThreadLocalData* t : _tasks_by_priority) {
-				if (SwitchToTask(*t)) return true;
-			}
-
-			return false;
-		}
-#endif
-
-		inline void OnTaskExecuteBegin(Task& task) {
-			_tasks.push_back(TaskThreadLocalData());
-			TaskThreadLocalData* data = &_tasks.back();
-			data->task = &task;
-			_tasks_by_priority.push_back(data);
-
-			// Sort tasks by priority
-			std::sort(_tasks_by_priority.begin(), _tasks_by_priority.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
-				return lhs->task->_priority < rhs->task->_priority;
-			});
-
-#if ANVIL_TASK_FIBERS
-			FiberData* fiber = AllocateFiber();
-			fiber->task = data->task;
-			task._fiber = fiber->fiber;
-#else
-			_current_task = data;
-#endif
-		}
-
-		void OnTaskExecuteEnd(Task& task) {
-			{
-				auto end = _tasks_by_priority.end();
-				auto i = std::find_if(_tasks_by_priority.begin(), end, [&task](const TaskThreadLocalData* data)->bool {
-					return data->task == &task;
-				});
-				if (i != end) {
-					if (_tasks_by_priority.size() == 1u) {
-						_tasks_by_priority.clear();
-					} else {
-						_tasks_by_priority.erase(i);
-					}
-				}
-			}
-			{
-				auto end = _tasks.end();
-				auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
-					return data.task == &task;
-				});
-				if (i != end) {
-					if (_tasks.size() == 1u) {
-						_tasks.clear();
-					} else {
-						_tasks.erase(i);
-					}
-				}
-			}
-
-#if ANVIL_TASK_FIBERS
-			for (FiberData& fiber : _fibers) {
-				if (fiber.fiber == task._fiber) {
-					DeallocateFiber(&fiber);
-					break;
-				}
-			}
-			task._fiber = nullptr;
-#else
-			if (_tasks.empty()) {
-				_current_task = nullptr;
-			} else {
-				_current_task = &_tasks.back();
-			}
-
-#endif
-		}
-
-		inline TaskThreadLocalData* GetCurrentExecutingTaskData() {
-			return _current_task;
-		}
-
-		TaskThreadLocalData* GetTaskData(Task& task) {
-			for (TaskThreadLocalData& data : _tasks) {
-				if (data.task == &task) return &data;
-			}
-
-			return nullptr;
-		}
-
-		inline TaskThreadLocalData* GetTaskData(size_t index) {
-			auto i = _tasks.begin();
-			while (index > 0) {
-				--index;
-				++i;
-			}
-			return &*i;
-		}
-
-		inline size_t GetNumberOfTasks() const {
-			return _tasks.size();
-		}
 	};
+	
+	thread_local TaskThreadLocalData g_thread_additional_data;
 
-	thread_local _TaskThreadLocalData g_thread_local_data;
+//	struct TaskThreadLocalData {
+//		Task* task;
+//		const std::function<bool(void)>* yield_condition;
+//
+//		TaskThreadLocalData() :
+//			task(nullptr),
+//			yield_condition(nullptr)
+//		{}
+//	};
+//
+//	struct FiberData {
+//#if ANVIL_TASK_FIBERS
+//		LPVOID fiber;
+//#else
+//		void* fiber;
+//#endif
+//		Task* task;
+//
+//		FiberData() :
+//			fiber(nullptr),
+//			task(nullptr)
+//		{}
+//	};
+//
+//	class _TaskThreadLocalData {
+//	private:
+//		enum { MAX_NESTED_TASKS = 256u };
+//
+//#if ANVIL_TASK_FIBERS
+//		LPVOID _fiber;
+//#endif
+//		std::list<FiberData> _fibers;
+//		std::list<TaskThreadLocalData> _tasks;
+//		std::vector<TaskThreadLocalData*> _tasks_by_priority;
+//		TaskThreadLocalData* _current_task;
+//
+//		FiberData* AllocateFiber() {
+//			// For for an unused fiber
+//			for (FiberData& fiber : _fibers) {
+//				if (fiber.task == nullptr) {
+//					return &fiber;
+//				}
+//			}
+//
+//			// Allocate a new fiber
+//			_fibers.push_back(std::move(FiberData()));
+//			FiberData* fiber = &_fibers.back();
+//#if ANVIL_TASK_FIBERS
+//			fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber);
+//#endif
+//			return fiber;
+//		}
+//
+//		void DeallocateFiber(FiberData* fiber) {
+//#if ANVIL_TASK_FIBERS
+//			fiber->task = nullptr;
+//#endif
+//		}
+//	public:
+//		uint32_t scheduler_index;
+//		bool is_worker_thread;
+//
+//		_TaskThreadLocalData() :
+//#if ANVIL_TASK_FIBERS
+//			_fiber(nullptr),
+//#endif
+//			_current_task(nullptr),
+//			scheduler_index(UINT32_MAX),
+//			is_worker_thread(false)
+//		{
+//#if ANVIL_TASK_FIBERS
+//			_fiber = ConvertThreadToFiber(nullptr);
+//#endif
+//		}
+//
+//		~_TaskThreadLocalData() {
+//#if ANVIL_TASK_FIBERS
+//			// Delete old fibers
+//			for (FiberData& fiber : _fibers) {
+//				DeleteFiber(fiber.fiber);
+//			}
+//#endif
+//			_fibers.clear();
+//		}
+//
+//		void SwitchToMainFiber() {
+//			// Are we currently executing the main fiber?
+//			if (_current_task == nullptr) return;
+//
+//			// Switch to it
+//#if ANVIL_TASK_FIBERS
+//			_current_task = nullptr;
+//			SwitchToFiber(_fiber);
+//#endif
+//		}
+//
+//#if ANVIL_TASK_FIBERS
+//		bool SwitchToTask(TaskThreadLocalData& task) {
+//			if (&task == _current_task) return false;
+//
+//			// If the task is able to execute
+//			if (task.yield_condition == nullptr || (*task.yield_condition)()) {
+//				_current_task = &task;
+//				SwitchToFiber(task.task->_fiber);
+//				return true;
+//			}
+//
+//			return false;
+//		}
+//
+//		bool SwitchToAnyTask() {
+//			// Try to execute a task that is ready to resume
+//			for (TaskThreadLocalData* t : _tasks_by_priority) {
+//				if (SwitchToTask(*t)) return true;
+//			}
+//
+//			return false;
+//		}
+//#endif
+//
+//		inline void OnTaskExecuteBegin(Task& task) {
+//			_tasks.push_back(TaskThreadLocalData());
+//			TaskThreadLocalData* data = &_tasks.back();
+//			data->task = &task;
+//			_tasks_by_priority.push_back(data);
+//
+//			// Sort tasks by priority
+//			std::sort(_tasks_by_priority.begin(), _tasks_by_priority.end(), [](const TaskThreadLocalData* lhs, const TaskThreadLocalData* rhs)->bool {
+//				return lhs->task->_priority < rhs->task->_priority;
+//			});
+//
+//#if ANVIL_TASK_FIBERS
+//			FiberData* fiber = AllocateFiber();
+//			fiber->task = data->task;
+//			task._fiber = fiber->fiber;
+//#else
+//			_current_task = data;
+//#endif
+//		}
+//
+//		void OnTaskExecuteEnd(Task& task) {
+//			{
+//				auto end = _tasks_by_priority.end();
+//				auto i = std::find_if(_tasks_by_priority.begin(), end, [&task](const TaskThreadLocalData* data)->bool {
+//					return data->task == &task;
+//				});
+//				if (i != end) {
+//					if (_tasks_by_priority.size() == 1u) {
+//						_tasks_by_priority.clear();
+//					} else {
+//						_tasks_by_priority.erase(i);
+//					}
+//				}
+//			}
+//			{
+//				auto end = _tasks.end();
+//				auto i = std::find_if(_tasks.begin(), end, [&task](const TaskThreadLocalData& data)->bool {
+//					return data.task == &task;
+//				});
+//				if (i != end) {
+//					if (_tasks.size() == 1u) {
+//						_tasks.clear();
+//					} else {
+//						_tasks.erase(i);
+//					}
+//				}
+//			}
+//
+//#if ANVIL_TASK_FIBERS
+//			for (FiberData& fiber : _fibers) {
+//				if (fiber.fiber == task._fiber) {
+//					DeallocateFiber(&fiber);
+//					break;
+//				}
+//			}
+//			task._fiber = nullptr;
+//#else
+//			if (_tasks.empty()) {
+//				_current_task = nullptr;
+//			} else {
+//				_current_task = &_tasks.back();
+//			}
+//
+//#endif
+//		}
+//
+//		inline TaskThreadLocalData* GetCurrentExecutingTaskData() {
+//			return _current_task;
+//		}
+//
+//		TaskThreadLocalData* GetTaskData(Task& task) {
+//			for (TaskThreadLocalData& data : _tasks) {
+//				if (data.task == &task) return &data;
+//			}
+//
+//			return nullptr;
+//		}
+//
+//		inline TaskThreadLocalData* GetTaskData(size_t index) {
+//			auto i = _tasks.begin();
+//			while (index > 0) {
+//				--index;
+//				++i;
+//			}
+//			return &*i;
+//		}
+//
+//		inline size_t GetNumberOfTasks() const {
+//			return _tasks.size();
+//		}
+//	};
+//
+//	thread_local _TaskThreadLocalData g_thread_local_data;
 
 #if ANVIL_USE_NEST_COUNTER
 	thread_local int32_t g_tasks_nested_on_this_thread = 0; //!< Tracks if Task::Execute is being called on this thread (and how many tasks are nested)
@@ -598,17 +611,20 @@ namespace anvil {
 	}
 
 	Task* Task::GetCurrentlyExecutingTask() {
-		auto data = g_thread_local_data.GetCurrentExecutingTaskData();
-		return data == nullptr ? nullptr : data->task;
+		if (g_thread_additional_data.task_stack.empty()) {
+			return nullptr;
+		} else {
+			return g_thread_additional_data.task_stack.back();
+		}
 	}
 
 	size_t Task::GetNumberOfTasksExecutingOnThisThread() {
-		return g_thread_local_data.GetNumberOfTasks();
+		return g_thread_additional_data.task_stack.size();
 	}
 
 	Task* Task::GetCurrentlyExecutingTask(size_t index) {
-		auto data = g_thread_local_data.GetTaskData(index);
-		return data == nullptr ? nullptr : data->task;
+		if (index >= g_thread_additional_data.task_stack.size()) return nullptr;
+		return g_thread_additional_data.task_stack[index];
 	}
 
 	void Task::SetException(std::exception_ptr exception) {
@@ -791,7 +807,7 @@ HANDLE_ERROR:
 		};
 
 		try {
-			g_thread_local_data.OnTaskExecuteBegin(*this);
+			g_thread_additional_data.task_stack.push_back(this);
 		} catch (std::exception& e) {
 			CatchException(std::move(std::current_exception()), false);
 		}
@@ -808,9 +824,7 @@ HANDLE_ERROR:
 #if ANVIL_TASK_FIBERS
 		g_thread_local_data.SwitchToTask(*g_thread_local_data.GetTaskData(*this));
 #else
-		FiberData data;
-		data.task = this;
-		FiberFunction(&data);
+		FiberFunction(*g_thread_additional_data.task_stack.back());
 #endif
 	}
 
@@ -818,14 +832,10 @@ HANDLE_ERROR:
 	void WINAPI Task::FiberFunction(LPVOID param) {
 		while (true) {
 #else
-	void Task::FiberFunction(void* param) {
+	void Task::FiberFunction(Task& task) {
 		if (true) {
 #endif
 			{
-				FiberData& fibData = *static_cast<FiberData*>(param);
-				Task& task = *fibData.task;
-
-
 				const auto CatchException = [&task](std::exception_ptr&& exception, bool set_exception) {
 					// Handle the exception
 					if (set_exception) task.SetException(std::move(exception));
@@ -834,8 +844,7 @@ HANDLE_ERROR:
 						// Do nothing
 
 					// If the exception was caught before or during execution
-					}
-					else {
+					} else {
 						// Cancel the Task
 						task._state = Task::STATE_CANCELED;
 		#if ANVIL_TASK_CALLBACKS
@@ -881,7 +890,7 @@ HANDLE_ERROR:
 					task._scheduler = INVALID_SCHEDULER;
 
 					try {
-						g_thread_local_data.OnTaskExecuteEnd(task);
+						g_thread_additional_data.task_stack.pop_back();
 					} catch (std::exception& e) {
 						CatchException(std::move(std::current_exception()), false);
 					}
@@ -903,7 +912,9 @@ HANDLE_ERROR:
 			}
 
 			// Return control to the main thread
+#if ANVIL_TASK_FIBERS
 			g_thread_local_data.SwitchToMainFiber();
+#endif
 		}
 	}
 
@@ -1073,8 +1084,7 @@ HANDLE_ERROR:
 
 		// If there is a task available then execute it
 		if (task_count > 0) {
-			_TaskThreadLocalData& local_data = g_thread_local_data;
-			ThreadDebugData* debug_data = GetDebugDataForThread(local_data.scheduler_index);
+			ThreadDebugData* debug_data = GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 			if (debug_data) {
 				debug_data->tasks_executing += task_count;
 				_scheduler_debug.total_tasks_executing += task_count;
@@ -1097,7 +1107,7 @@ HANDLE_ERROR:
 
 
 	void Scheduler::RegisterAsWorkerThread() {
-		_TaskThreadLocalData& local_data = g_thread_local_data;
+		TaskThreadLocalData& local_data = g_thread_additional_data;
 		local_data.is_worker_thread = true;
 
 		{
@@ -1118,25 +1128,26 @@ HANDLE_ERROR:
 		max_sleep_milliseconds = std::max(1u, max_sleep_milliseconds);
 
 		// If this function is being called by a task
-		TaskThreadLocalData* data = g_thread_local_data.GetCurrentExecutingTaskData();
+		Task* t = g_thread_additional_data.task_stack.empty() ? nullptr : g_thread_additional_data.task_stack.back();
 		Scheduler::ThreadDebugData* debug_data = GetDebugDataForThisThread();
 
 #if ANVIL_DEBUG_TASKS
 		const float debug_time = GetDebugTime();
 #endif
-		if (data) {
-			Task& t = *data->task;
+		if (t) {
 
 			// State change
-			if (t._state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
-			t._state = Task::STATE_BLOCKED;
+			if (t->_state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
+			t->_state = Task::STATE_BLOCKED;
 #if ANVIL_TASK_CALLBACKS
 			t.OnBlock();
 #endif
 
 
+#if ANVIL_TASK_FIBERS
 			// Remember how the task should be resumed
 			data->yield_condition = &condition;
+#endif
 		}
 
 		// While the condition is not met
@@ -1207,17 +1218,18 @@ EXIT_CONDITION:
 		}
 
 		// If this function is being called by a task
-		if (data) {
-			Task& t = *data->task;
+		if (t) {
 
+#if ANVIL_TASK_FIBERS
 			// The task can no longer be resumed
 			data->yield_condition = nullptr;
+#endif
 
 			// State change
-			t._state = Task::STATE_EXECUTING;
+			t->_state = Task::STATE_EXECUTING;
 
 #if ANVIL_TASK_CALLBACKS
-			t.OnResume();
+			t->OnResume();
 #endif
 		}
 	}
@@ -1247,8 +1259,7 @@ EXIT_CONDITION:
 		const auto this_scheduler = this;
 
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-		TaskThreadLocalData* parent_local = g_thread_local_data.GetCurrentExecutingTaskData();
-		Task* const parent = parent_local ? parent_local->task : nullptr;
+		Task* const parent = g_thread_additional_data.task_stack.empty() ? nullptr : g_thread_additional_data.task_stack.back();
 #endif
 
 		// Initial error checking and initialisation
@@ -1386,7 +1397,7 @@ EXIT_CONDITION:
 #endif
 
 	uint32_t Scheduler::GetThisThreadIndex() const {
-		return g_thread_local_data.scheduler_index;
+		return g_thread_additional_data.scheduler_index;
 	}
 
 #if ANVIL_DEBUG_TASKS
