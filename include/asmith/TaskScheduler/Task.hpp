@@ -155,9 +155,6 @@ namespace anvil {
 #if ANVIL_TASK_PARENT
 		std::vector<Task*> _children;
 #endif
-#if ANVIL_TASK_FIBERS
-		LPVOID _fiber;
-#endif
 		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
