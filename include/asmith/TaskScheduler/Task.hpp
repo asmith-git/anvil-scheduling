@@ -167,8 +167,8 @@ namespace anvil {
 		Task* _parent;
 		uint16_t _fast_child_count;
 		uint16_t _fast_recursive_child_count;
-		uint16_t _nesting_depth;
 #endif
+		uint16_t _nesting_depth;
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
 		State _state;						//!< Stores the current state of the task
 		struct {
@@ -176,6 +176,7 @@ namespace anvil {
 			uint8_t _execute_begin_flag : 1;	//!< Set to 1 when the task begins execution
 			uint8_t _execute_end_flag : 1;		//!< Set to 1 when the task completes execution
 			uint8_t _wait_flag : 1;				//!< Set to 1 when it is okay to exit out of Task::Wait()
+			uint8_t _schedule_valid : 1;		//!< Set to 1 when when a scheduler has decided the task is valid
 		};
 	protected:
 		/*!
@@ -341,14 +342,11 @@ namespace anvil {
 		}
 
 		/*!
-			\return Return the size of the inheritance tree for this task (0 if there is no parent)
+			\return Return the size of the inheritance tree for this task
+			\details This will be incorrect if ANVIL_TASK_PARENT or ANVIL_TASK_FAST_CHILD_COUNT are both disabled and ANVIL_TASK_FIBERS is enabled
 		*/
 		inline size_t GetNestingDepth() const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 			return _nesting_depth;
-#else
-			return 0u;
-#endif
 		}
 
 		/*!

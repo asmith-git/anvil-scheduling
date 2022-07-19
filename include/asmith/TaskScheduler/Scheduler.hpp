@@ -25,6 +25,7 @@
 #ifndef ANVIL_SCHEDULER_SCHEDULER_HPP
 #define ANVIL_SCHEDULER_SCHEDULER_HPP
 
+#include <shared_mutex>
 #include <mutex>
 #include <condition_variable>
 #include <vector>
@@ -77,7 +78,8 @@ namespace anvil {
 	protected:
 		SchedulerDebugData _scheduler_debug;
 		std::condition_variable _task_queue_update;
-		std::mutex _mutex;
+		std::shared_mutex _task_queue_mutex;
+		std::mutex _condition_mutex;
 #if ANVIL_DEBUG_TASKS
 		uint32_t _debug_id;
 #endif

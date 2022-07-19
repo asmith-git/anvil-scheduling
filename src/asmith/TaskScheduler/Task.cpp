@@ -355,8 +355,8 @@ namespace anvil {
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
 		_fast_child_count(0u),
 		_fast_recursive_child_count(0u),
-		_nesting_depth(0u),
 #endif
+		_nesting_depth(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED),
 		_scheduled_flag(0u),
@@ -479,7 +479,7 @@ namespace anvil {
 		// Lock the scheduler's task queue
 		bool notify = false;
 		{
-			std::lock_guard<std::mutex> lock(scheduler->_mutex);
+			std::lock_guard<std::shared_mutex> lock(scheduler->_task_queue_mutex);
 
 			// If the state is not scheduled then it cannot be canceled
 			if (_state != STATE_SCHEDULED) return false;
@@ -560,7 +560,7 @@ namespace anvil {
 		} else {
 			while (! YieldCondition()) {
 				// Wait for 1ms then check again
-				std::unique_lock<std::mutex> lock(scheduler->_mutex);
+				std::unique_lock<std::mutex> lock(scheduler->_condition_mutex);
 				if (YieldCondition()) break; // If the condition was met while acquiring the lock
 				scheduler->_task_queue_update.wait_for(lock, std::chrono::milliseconds(1));
 			}
@@ -591,9 +591,9 @@ namespace anvil {
 		std::exception_ptr exception = nullptr;
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
-			std::lock_guard<std::mutex> lock(scheduler->_mutex);
 			if (_state == STATE_SCHEDULED) {
 				_priority = priority;
+				std::lock_guard<std::shared_mutex> lock(scheduler->_task_queue_mutex);
 				scheduler->SortTaskQueue();
 			} else {
 				exception = std::make_exception_ptr(std::runtime_error("Priority of a task cannot be changed when executing"));
@@ -934,7 +934,7 @@ HANDLE_ERROR:
 
 		{
 			// Acquire the queue lock
-			std::lock_guard<std::mutex> lock(_mutex);
+			std::lock_guard<std::shared_mutex> lock(_task_queue_mutex);
 
 			// Remove the last task(s) in the queue
 			uint32_t count2 = 0u;
@@ -983,7 +983,6 @@ HANDLE_ERROR:
 		local_data.is_worker_thread = true;
 
 		{
-			std::unique_lock<std::mutex> lock(_mutex);
 			local_data.scheduler_index = _scheduler_debug.total_thread_count++;
 			ThreadDebugData& debug_data = _scheduler_debug.thread_debug_data[local_data.scheduler_index];
 			debug_data.tasks_executing = 0u;
@@ -1020,13 +1019,19 @@ HANDLE_ERROR:
 #if ANVIL_TASK_CALLBACKS
 			t.OnBlock();
 #endif
-
+		}
 
 #if ANVIL_TASK_FIBERS
-			// Remember how the task should be resumed
-			fiber->yield_condition = &condition;
+		// Remember how the task should be resumed
+		if (fiber) fiber->yield_condition = &condition;
 #endif
-		}
+
+		const auto predicate = [this, &condition]()->bool {
+#if ANVIL_TASK_FIBERS
+			if (g_thread_additional_data.AreAnyFibersReady()) return true;
+#endif
+			return condition() || !_task_queue.empty();
+		};
 
 		// While the condition is not met
 		while (true) {
@@ -1044,8 +1049,6 @@ EXIT_CONDITION:
 					if (condition()) goto EXIT_CONDITION;
 
 				} else {
-					// Block until there is a queue update
-					std::unique_lock<std::mutex> lock(_mutex);
 
 #if ANVIL_DEBUG_TASKS
 					{
@@ -1059,17 +1062,15 @@ EXIT_CONDITION:
 						--_scheduler_debug.executing_thread_count;
 					}
 
-					const auto predicate = [this, &condition]()->bool {
-#if ANVIL_TASK_FIBERS
-						if (g_thread_additional_data.AreAnyFibersReady()) return true;
-#endif
-						return condition() || !_task_queue.empty();
-					};
+					// Block until there is a queue update
+					std::unique_lock<std::mutex> lock(_condition_mutex);
 
-					if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
-						_task_queue_update.wait(lock, predicate);
-					} else {
-						_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds), predicate);
+					if (!predicate()) {
+						if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
+							_task_queue_update.wait(lock);
+						} else {
+							_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
+						}
 					}
 
 					// Update that the thread is running
@@ -1089,14 +1090,14 @@ EXIT_CONDITION:
 			}
 		}
 
+#if ANVIL_TASK_FIBERS
+		// The task can no longer be resumed
+		if(fiber) fiber->yield_condition = nullptr;
+#endif
+
 		// If this function is being called by a task
 		if (t) {
 			std::lock_guard<std::shared_mutex> lock(t->_lock);
-
-#if ANVIL_TASK_FIBERS
-			// The task can no longer be resumed
-			fiber->yield_condition = nullptr;
-#endif
 
 			// State change
 			t->_state = Task::STATE_EXECUTING;
@@ -1140,6 +1141,7 @@ EXIT_CONDITION:
 #endif
 
 		// Initial error checking and initialisation
+		size_t ready_count = 0u;
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
 			std::lock_guard<std::shared_mutex> task_lock(t._lock);
@@ -1148,8 +1150,9 @@ EXIT_CONDITION:
 
 			// Change state
 			t._scheduled_flag = 1u;
-			t._state = Task::STATE_SCHEDULED;
 			t._wait_flag = 0u;
+			t._schedule_valid = 0u;
+			t._state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
 			t._scheduler = this_scheduler;
@@ -1181,6 +1184,12 @@ EXIT_CONDITION:
 					parent2 = parent2->_parent;
 				}
 			}
+#else
+#if ANVIL_TASK_FIBERS
+			t._nesting_depth = g_thread_additional_data.fiber_list.empty() ? 0u : 1u;
+#else
+			t._nesting_depth = g_thread_additional_data.task_stack.size();
+#endif
 #endif
 
 			// Calculate extended priority
@@ -1212,50 +1221,48 @@ EXIT_CONDITION:
 				continue;
 			}
 #endif
-		}
 
-		// Add to task queue
-		size_t ready_count = 0u;
-
-		{
-			// Lock the task queue
-			std::lock_guard<std::mutex> lock(_mutex);
-
-			// For each task to be scheduled
-			for (uint32_t i = 0u; i < count; ++i) {
-				Task& t = *tasks[i];
-
-				// Skip the task if initalisation failed
-				if (t._scheduler != this_scheduler) continue;
+			// Skip the task if initalisation failed
+			if (t._scheduler != this_scheduler) continue;
 #if ANVIL_TASK_DELAY_SCHEDULING
-				// If the task isn't ready to execute yet push it to the innactive queue
-				if (!t.IsReadyToExecute()) {
-					_unready_task_queue.push_back(&t);
-					continue;
-				}
+			// If the task isn't ready to execute yet push it to the innactive queue
+			if (!t.IsReadyToExecute()) {
+				_unready_task_queue.push_back(&t);
+				continue;
+			}
 #endif
 #if ANVIL_DEBUG_TASKS
-				{
-					uint32_t parent_id = 0u;
+			{
+				uint32_t parent_id = 0u;
 #if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-					if (parent) parent_id = parent->_debug_id;
+				if (parent) parent_id = parent->_debug_id;
 #endif
-					TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
-					g_debug_event_handler(nullptr, &e);
-				}
-#endif
-
-				// Add to the active queue
-				++ready_count;
-				_task_queue.push_back(tasks[i]);
+				TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
+				g_debug_event_handler(nullptr, &e);
 			}
-
-			// Sort task list by priority
-			if (ready_count > 0u) SortTaskQueue();
+#endif
+			t._schedule_valid = 1u;
+			++ready_count;
 		}
 
-		// Notify waiting threads
-		if (ready_count > 0u) TaskQueueNotify();
+		if (ready_count > 0u) {
+			{
+				// Lock the task queue
+				std::lock_guard<std::shared_mutex> lock(_task_queue_mutex);
+				_task_queue.reserve(_task_queue.size() + ready_count);
+				for (uint32_t i = 0u; i < count; ++i) {
+					if (tasks[i]->_schedule_valid) {
+						// Add to the active queue
+						_task_queue.push_back(tasks[i]);
+					}
+				}
+				// Sort task list by priority
+				SortTaskQueue();
+			}
+
+			// Notify waiting threads
+			TaskQueueNotify();
+		}
 	}
 	
 	void Scheduler::Schedule(Task* task, Priority priority) {

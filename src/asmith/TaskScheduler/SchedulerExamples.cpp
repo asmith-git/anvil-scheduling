@@ -50,7 +50,7 @@ namespace anvil {
 				switch (_comm_flag) {
 				case COMM_DISABLED:
 				{
-					std::unique_lock<std::mutex> lock(_scheduler._mutex);
+					std::unique_lock<std::mutex> lock(_scheduler._condition_mutex);
 					_scheduler._task_queue_update.wait(lock);
 				}
 				break;
