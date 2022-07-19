@@ -33,9 +33,11 @@
 #include <string>
 #include <atomic>
 #include <algorithm>
+#include <deque>
 #include <list>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 #include "asmith/TaskScheduler/Task.hpp"
+#include <emmintrin.h>
 
 namespace anvil {
 
@@ -207,9 +209,7 @@ namespace anvil {
 	}
 
 	static TaskDebugEvent::DebugEventHandler g_debug_event_handler = DefaultEventHandler;
-#endif	
-	
-#pragma optimize("", off)
+#endif
 
 #if ANVIL_TASK_FIBERS
 	struct FiberData {
@@ -233,7 +233,7 @@ namespace anvil {
 
 	struct TaskThreadLocalData {
 #if ANVIL_TASK_FIBERS
-		std::list<FiberData> fiber_list;
+		std::deque<FiberData*> fiber_list;
 		FiberData* current_fiber;
 		LPVOID main_fiber;
 #else
@@ -258,8 +258,9 @@ namespace anvil {
 		~TaskThreadLocalData() {
 #if ANVIL_TASK_FIBERS
 			// Delete old fibers
-			for (FiberData& fiber : fiber_list) {
-				DeleteFiber(fiber.fiber);
+			for (FiberData* fiber : fiber_list) {
+				DeleteFiber(fiber->fiber);
+				delete fiber;
 			}
 			fiber_list.clear();
 #endif
@@ -267,6 +268,17 @@ namespace anvil {
 
 #if ANVIL_TASK_FIBERS
 
+	bool AreAnyFibersReady() const {
+		if (!fiber_list.empty()) {
+			auto end = fiber_list.end();
+			auto i = std::find_if(fiber_list.begin(), end, [this](FiberData* fiber)->bool {
+				return fiber != current_fiber && fiber->task != nullptr && (fiber->yield_condition == nullptr || (*fiber->yield_condition)());
+			});
+			return i != end;
+		}
+
+		return false;
+	}
 
 	bool SwitchToTask(FiberData& fiber) {
 		if (&fiber == current_fiber) return false;
@@ -285,8 +297,22 @@ namespace anvil {
 	
 	bool SwitchToAnyTask() {
 		// Try to execute a task that is ready to resume
-		for (FiberData& fiber : fiber_list) {
-			if (SwitchToTask(fiber)) return true;
+		if (! fiber_list.empty()) {
+			auto end = fiber_list.end();
+			auto i = std::find_if(fiber_list.begin(), end, [this](FiberData* fiber)->bool {
+				return fiber != current_fiber && fiber->task != nullptr && (fiber->yield_condition == nullptr || (*fiber->yield_condition)());
+			});
+			if (i != end) {
+				// Move fiber to the back of the list
+				FiberData* fiber = *i;
+				fiber_list.erase(i);
+				fiber_list.push_back(fiber);
+
+				// Switch to the fiber
+				current_fiber = fiber;
+				SwitchToFiber(fiber->fiber);
+				return true;
+			}
 		}
 	
 		return false;
@@ -349,9 +375,13 @@ namespace anvil {
 
 	Task::~Task() {
 		{
-			std::lock_guard<std::mutex> lock(_lock);
-			while (_state == STATE_SCHEDULED || _state == STATE_EXECUTING || _state == STATE_BLOCKED) {
-				// Wait for task to complete
+			if (_state == STATE_SCHEDULED || _state == STATE_EXECUTING || _state == STATE_BLOCKED) {
+				bool not_finished = true;
+				while (not_finished) {
+					// Wait for task to complete
+					std::shared_lock<std::shared_mutex> lock(_lock);
+					not_finished = _wait_flag == 0u;
+				}
 			}
 		}
 
@@ -363,7 +393,7 @@ namespace anvil {
 		Task* parent = _parent;
 		if (parent) {
 			{
-				std::lock_guard<std::mutex> lock(parent->_lock);
+				std::lock_guard<std::shared_mutex> lock(parent->_lock);
 #if ANVIL_TASK_PARENT
 				auto end = parent->_children.end();
 				auto i = std::find(parent->_children.begin(), end, this);
@@ -376,7 +406,7 @@ namespace anvil {
 			}
 
 			while (parent) {
-				std::lock_guard<std::mutex> lock(parent->_lock);
+				std::lock_guard<std::shared_mutex> lock(parent->_lock);
 				--parent->_fast_recursive_child_count;
 				parent = parent->_parent;
 			}
@@ -410,8 +440,8 @@ namespace anvil {
 	size_t Task::GetNumberOfTasksExecutingOnThisThread() {
 #if ANVIL_TASK_FIBERS
 		size_t count = 0u;
-		for (const FiberData& fiber : g_thread_additional_data.fiber_list) {
-			if (fiber.task != nullptr) ++count;
+		for (const FiberData* fiber : g_thread_additional_data.fiber_list) {
+			if (fiber->task != nullptr) ++count;
 		}
 		return count;
 #else
@@ -422,9 +452,9 @@ namespace anvil {
 	Task* Task::GetCurrentlyExecutingTask(size_t index) {
 #if ANVIL_TASK_FIBERS
 		size_t count = 0u;
-		for (const FiberData& fiber : g_thread_additional_data.fiber_list) {
-			if (fiber.task != nullptr) {
-				if (count == index) return fiber.task;
+		for (const FiberData* fiber : g_thread_additional_data.fiber_list) {
+			if (fiber->task != nullptr) {
+				if (count == index) return fiber->task;
 				++count;
 			}
 		}
@@ -473,7 +503,7 @@ namespace anvil {
 #endif
 		}
 		{
-			std::lock_guard<std::mutex> task_lock(_lock);
+			std::lock_guard<std::shared_mutex> task_lock(_lock);
 #if ANVIL_DEBUG_TASKS
 			{
 				TaskDebugEvent e = TaskDebugEvent::CancelEvent(_debug_id);
@@ -518,7 +548,7 @@ namespace anvil {
 #endif
 
 		const auto YieldCondition = [this]()->bool {
-			std::lock_guard<std::mutex> task_lock(_lock);
+			std::shared_lock<std::shared_mutex> task_lock(_lock);
 			if (_state != STATE_CANCELED && _state != STATE_COMPLETE) return false;
 			return _wait_flag == 1u;
 		};
@@ -531,6 +561,7 @@ namespace anvil {
 			while (! YieldCondition()) {
 				// Wait for 1ms then check again
 				std::unique_lock<std::mutex> lock(scheduler->_mutex);
+				if (YieldCondition()) break; // If the condition was met while acquiring the lock
 				scheduler->_task_queue_update.wait_for(lock, std::chrono::milliseconds(1));
 			}
 		}
@@ -617,17 +648,17 @@ HANDLE_ERROR:
 		FiberData* fiber = nullptr;
 		try {
 			// Check if an existing fiber is unused
-			for (FiberData& f : g_thread_additional_data.fiber_list) {
-				if (f.task == nullptr) {
-					fiber = &f;
+			for (FiberData* f : g_thread_additional_data.fiber_list) {
+				if (f->task == nullptr) {
+					fiber = f;
 					break;
 				}
 			}
 
 			if (fiber == nullptr) {
 				// Allocate a new fiber
-				g_thread_additional_data.fiber_list.push_back(FiberData());
-				fiber = &g_thread_additional_data.fiber_list.back();
+				g_thread_additional_data.fiber_list.push_back(new FiberData());
+				fiber = g_thread_additional_data.fiber_list.back();
 				fiber->fiber = CreateFiber(0u, Task::FiberFunction, fiber);
 			}
 
@@ -676,6 +707,8 @@ HANDLE_ERROR:
 	void Task::FiberFunction(Task& task) {
 		if (true) {
 #endif
+
+			Scheduler& scheduler = task.GetScheduler();
 			{
 				const auto CatchException = [&task](std::exception_ptr&& exception, bool set_exception) {
 					// Handle the exception
@@ -705,14 +738,12 @@ HANDLE_ERROR:
 					}
 				};
 
-				Scheduler& scheduler = task.GetScheduler();
-
 				// If an error hasn't been detected yet
 				if (task._state != Task::STATE_CANCELED) {
 
 					// Execute the task
 					{
-						std::lock_guard<std::mutex> task_lock(task._lock);
+						std::lock_guard<std::shared_mutex> task_lock(task._lock);
 						task._state = Task::STATE_EXECUTING;
 					}
 					try {
@@ -723,16 +754,17 @@ HANDLE_ERROR:
 						CatchException(std::exception_ptr(std::make_exception_ptr(std::runtime_error("Thrown value was not a C++ exception"))), true);
 					}
 				}
+
+				Scheduler::ThreadDebugData* debug_data = task._scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
+				if (debug_data) {
+					--debug_data->tasks_executing;
+					--task._scheduler->_scheduler_debug.total_tasks_executing;
+				}
+
 				{
-					std::lock_guard<std::mutex> task_lock(task._lock);			
-
-					Scheduler::ThreadDebugData* debug_data = task._scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
-					if (debug_data) {
-						--debug_data->tasks_executing;
-						--task._scheduler->_scheduler_debug.total_tasks_executing;
-					}
-
 					// Post-execution cleanup
+					std::lock_guard<std::shared_mutex> task_lock(task._lock);
+
 					try {
 #if ANVIL_TASK_FIBERS
 						fiber.task = nullptr;
@@ -755,10 +787,9 @@ HANDLE_ERROR:
 
 					task._wait_flag = 1u;
 				}
-
-
-				scheduler.TaskQueueNotify();
 			}
+
+			scheduler.TaskQueueNotify();
 
 			// Return control to the main thread
 #if ANVIL_TASK_FIBERS
@@ -981,6 +1012,7 @@ HANDLE_ERROR:
 		const float debug_time = GetDebugTime();
 #endif
 		if (t) {
+			std::lock_guard<std::shared_mutex> lock(t->_lock);
 
 			// State change
 			if (t->_state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
@@ -1013,51 +1045,45 @@ EXIT_CONDITION:
 
 				} else {
 					// Block until there is a queue update
-
-					// Acquire a lock on the scheduler
-					const size_t tasks_queued_before_lock = _task_queue.size();
 					std::unique_lock<std::mutex> lock(_mutex);
 
-					// Check if the condition was met while acquiring the lock
-					if (condition()) goto EXIT_CONDITION;
-
-					// Check if a task was added while acquiring the lock
-					if (!_task_queue.empty()) continue;
-
-					// If the number of queued tasks has changed (becuase the lock took time to acquire) 
-					// Then skip over the sleep for this attempt
-					if (_task_queue.size() == tasks_queued_before_lock) {
 #if ANVIL_DEBUG_TASKS
-						{
-							SchedulerDebugEvent e = SchedulerDebugEvent::PauseEvent(_debug_id);
-							g_debug_event_handler(&e, nullptr);
-						}
-#endif
-						// Update that thread is sleeping
-						if (debug_data) {
-							debug_data->sleeping = 1u;
-							--_scheduler_debug.executing_thread_count;
-						}
-
-						if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
-							_task_queue_update.wait(lock);
-						} else {
-							_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds));
-						}
-
-						// Update that the thread is running
-						if (debug_data) {
-							debug_data->sleeping = 0u;
-							++_scheduler_debug.executing_thread_count;
-						}
-
-#if ANVIL_DEBUG_TASKS
-						{
-							SchedulerDebugEvent e = SchedulerDebugEvent::ResumeEvent(_debug_id);
-							g_debug_event_handler(&e, nullptr);
-						}
-#endif
+					{
+						SchedulerDebugEvent e = SchedulerDebugEvent::PauseEvent(_debug_id);
+						g_debug_event_handler(&e, nullptr);
 					}
+#endif
+					// Update that thread is sleeping
+					if (debug_data) {
+						debug_data->sleeping = 1u;
+						--_scheduler_debug.executing_thread_count;
+					}
+
+					const auto predicate = [this, &condition]()->bool {
+#if ANVIL_TASK_FIBERS
+						if (g_thread_additional_data.AreAnyFibersReady()) return true;
+#endif
+						return condition() || !_task_queue.empty();
+					};
+
+					if (max_sleep_milliseconds == UINT32_MAX) { // Special behaviour, only wake when task updates happen (useful for implementing a thread pool)
+						_task_queue_update.wait(lock, predicate);
+					} else {
+						_task_queue_update.wait_for(lock, std::chrono::milliseconds(max_sleep_milliseconds), predicate);
+					}
+
+					// Update that the thread is running
+					if (debug_data) {
+						debug_data->sleeping = 0u;
+						++_scheduler_debug.executing_thread_count;
+					}
+
+#if ANVIL_DEBUG_TASKS
+					{
+						SchedulerDebugEvent e = SchedulerDebugEvent::ResumeEvent(_debug_id);
+						g_debug_event_handler(&e, nullptr);
+					}
+#endif
 				}
 
 			}
@@ -1065,6 +1091,7 @@ EXIT_CONDITION:
 
 		// If this function is being called by a task
 		if (t) {
+			std::lock_guard<std::shared_mutex> lock(t->_lock);
 
 #if ANVIL_TASK_FIBERS
 			// The task can no longer be resumed
@@ -1115,7 +1142,7 @@ EXIT_CONDITION:
 		// Initial error checking and initialisation
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
-			std::lock_guard<std::mutex> task_lock(t._lock);
+			std::lock_guard<std::shared_mutex> task_lock(t._lock);
 
 			if (t._state != Task::STATE_INITIALISED) continue;
 
@@ -1138,7 +1165,7 @@ EXIT_CONDITION:
 			if (parent) {
 				anvil::Task* parent2;
 				{
-					std::lock_guard<std::mutex> parent_lock(parent->_lock);
+					std::lock_guard<std::shared_mutex> parent_lock(parent->_lock);
 #if ANVIL_TASK_PARENT
 					parent->_children.push_back(tasks[i]);
 #endif
@@ -1148,7 +1175,7 @@ EXIT_CONDITION:
 					parent2 = parent->_parent;
 				}
 				while (parent2) {
-					std::lock_guard<std::mutex> parent2_lock(parent2->_lock);
+					std::lock_guard<std::shared_mutex> parent2_lock(parent2->_lock);
 					++t._nesting_depth;
 					++parent2->_fast_recursive_child_count;
 					parent2 = parent2->_parent;

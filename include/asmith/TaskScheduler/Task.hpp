@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <stdexcept>
+#include <shared_mutex>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
 #if ANVIL_TASK_FIBERS
@@ -151,7 +152,7 @@ namespace anvil {
 
 		void SetException(std::exception_ptr exception);
 
-		mutable std::mutex _lock;
+		mutable std::shared_mutex _lock;
 #if ANVIL_TASK_PARENT
 		std::vector<Task*> _children;
 #endif
@@ -311,7 +312,7 @@ namespace anvil {
 		*/
 		inline std::vector<Task*> GetChildren() const throw() {
 #if ANVIL_TASK_PARENT
-			std::lock_guard<std::mutex> lock(_lock);
+			std::shared_lock<std::shared_mutex> lock(_lock);
 			std::vector<Task*> tmp = _children;
 			return tmp;
 #else
