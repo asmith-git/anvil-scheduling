@@ -173,8 +173,6 @@ namespace anvil {
 		State _state;						//!< Stores the current state of the task
 		struct {
 			uint8_t _scheduled_flag : 1;		//!< Set to 1 when the task has been scheduled
-			uint8_t _execute_begin_flag : 1;	//!< Set to 1 when the task begins execution
-			uint8_t _execute_end_flag : 1;		//!< Set to 1 when the task completes execution
 			uint8_t _wait_flag : 1;				//!< Set to 1 when it is okay to exit out of Task::Wait()
 			uint8_t _schedule_valid : 1;		//!< Set to 1 when when a scheduler has decided the task is valid
 		};

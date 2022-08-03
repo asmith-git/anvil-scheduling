@@ -170,7 +170,7 @@ namespace anvil {
 
 		void RegisterAsWorkerThread();
 
-		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u);
+		void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 1u);
 
 		void Schedule(Task** tasks, const uint32_t count);
 		void Schedule(std::shared_ptr<Task>* tasks, uint32_t count);

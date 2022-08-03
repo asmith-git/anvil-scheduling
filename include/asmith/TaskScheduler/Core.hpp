@@ -24,16 +24,27 @@
 
 #ifndef ANVIL_SCHEDULER_CORE_HPP
 #define ANVIL_SCHEDULER_CORE_HPP
-
 #include <cstdint>
 
-// Protection from conflicting definitions in common headers
+// Include the options header if it exists
+#if __has_include("UserSchedulerOptions.hpp")
+	#include "UserSchedulerOptions.hpp"
 
-#ifdef Yield // Windows.h
-	#undef Yield
+// Otherwise define default options
+#else
+	#define ANVIL_TASK_EXTENDED_PRIORITY 0
+	#define ANVIL_TASK_HAS_EXCEPTIONS 1
+	#define ANVIL_NO_EXECUTE_ON_WAIT 0
+	#define ANVIL_TASK_CALLBACKS 0
+	#define ANVIL_DEBUG_TASKS 0
+	#define ANVIL_TASK_PARENT 1
+	#define ANVIL_TASK_FAST_CHILD_COUNT 1
+	#define ANVIL_TASK_DELAY_SCHEDULING 0
+	#define ANVIL_TASK_FIBERS 0
+	#define  ANVIL_DLL_EXPORT __declspec(dllimport)
 #endif
 
-// Define default options
+// Define options that are missing
 
 #ifndef ANVIL_TASK_EXTENDED_PRIORITY
 	#define ANVIL_TASK_EXTENDED_PRIORITY 0
@@ -73,7 +84,13 @@
 #endif
 
 #ifndef ANVIL_DLL_EXPORT
-#define  ANVIL_DLL_EXPORT __declspec(dllimport)
+	#define  ANVIL_DLL_EXPORT __declspec(dllimport)
+#endif
+
+// Protection from conflicting definitions in common headers
+
+#ifdef Yield // Windows.h
+	#undef Yield
 #endif
 
 // Check for invalid exension options
