@@ -358,6 +358,7 @@ namespace anvil {
 	Task::Task() :
 		_scheduler(INVALID_SCHEDULER),
 #if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
+		_parent(nullptr),
 		_fast_child_count(0u),
 		_fast_recursive_child_count(0u),
 #endif
