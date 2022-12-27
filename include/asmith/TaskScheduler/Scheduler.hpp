@@ -58,12 +58,12 @@ namespace anvil {
 		Scheduler& operator=(const Scheduler&) = delete;
 
 #if ANVIL_TASK_DELAY_SCHEDULING
-		std::vector<Task*> _unready_task_queue; //!< Contains tasks that have been scheduled but are not yet ready to execute
+		std::vector<std::shared_ptr<TaskData>> _unready_task_queue; //!< Contains tasks that have been scheduled but are not yet ready to execute
 #endif
-		std::vector<Task*> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
+		std::vector<std::shared_ptr<TaskData>> _task_queue;			//!< Contains tasks that have been scheduled and are ready to execute
 		void SortTaskQueue() throw();
 
-		void RemoveNextTaskFromQueue(Task** tasks, uint32_t& count) throw();
+		void RemoveNextTaskFromQueue(std::shared_ptr<TaskData>* tasks, uint32_t& count) throw();
 
 		/*!
 			\brief Called when a Task has been added or removed from the queue

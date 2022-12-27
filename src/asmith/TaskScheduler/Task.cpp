@@ -22,6 +22,8 @@
 
 // For the latest version, please visit https://github.com/asmith-git/anvil-scheduling
 
+#pragma optimize("", off)
+
 #include "asmith/TaskScheduler/Core.hpp"
 #if ANVIL_DEBUG_TASKS
 	#include <cctype>
@@ -353,16 +355,26 @@ namespace anvil {
 
 #define INVALID_SCHEDULER nullptr
 
+	// Task::TaskData
+
+	TaskData::TaskData() :
+		task(nullptr),
+		scheduler(nullptr)
+	{}
+
+	void TaskData::Clear() {
+		task = nullptr;
+		scheduler = nullptr;
+#if ANVIL_USE_PARENTCHILDREN
+		children.clear();
+		std::weak_ptr<TaskData> tmp;
+		parent.swap(tmp);
+#endif
+	}
+
 	// Task
 
 	Task::Task() :
-		_scheduler(INVALID_SCHEDULER),
-#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
-		_parent(nullptr),
-		_fast_child_count(0u),
-		_fast_recursive_child_count(0u),
-#endif
-		_nesting_depth(0u),
 		_priority(Priority::PRIORITY_MIDDLE),
 		_state(STATE_INITIALISED),
 		_scheduled_flag(0u),
@@ -383,39 +395,17 @@ namespace anvil {
 				bool not_finished = true;
 				while (not_finished) {
 					// Wait for task to complete
-					std::shared_lock<std::shared_mutex> lock(_lock);
-					not_finished = _wait_flag == 0u;
+					std::shared_ptr<TaskData> data = _data.lock();
+					if (data) {
+						std::shared_lock<std::shared_mutex> lock(_lock);
+						not_finished = _wait_flag == 0u;
+					} else {
+						break;
+					}
 				}
 			}
 		}
 
-#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
-		// Make sure children are destroyed first
-		while (_fast_child_count + _fast_recursive_child_count > 0u);
-
-		// Remove task from list of children
-		Task* parent = _parent;
-		if (parent) {
-			{
-				std::lock_guard<std::shared_mutex> lock(parent->_lock);
-#if ANVIL_TASK_PARENT
-				auto end = parent->_children.end();
-				auto i = std::find(parent->_children.begin(), end, this);
-				_parent->_children.erase(i);
-#endif
-
-				--_parent->_fast_child_count;
-				--parent->_fast_recursive_child_count;
-				parent = parent->_parent;
-			}
-
-			while (parent) {
-				std::lock_guard<std::shared_mutex> lock(parent->_lock);
-				--parent->_fast_recursive_child_count;
-				parent = parent->_parent;
-			}
-		}
-#endif
 #if ANVIL_DEBUG_TASKS
 		{
 			TaskDebugEvent e = TaskDebugEvent::DestroyEvent(_debug_id);
@@ -490,7 +480,7 @@ namespace anvil {
 
 			// Remove the task from the queue
 			for (auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
-				if (*i == this) {
+				if ((*i)->task == this) {
 					scheduler->_task_queue.erase(i);
 					notify = true;
 					break;
@@ -525,8 +515,14 @@ namespace anvil {
 			
 #endif
 			// State change and cleanup
+			std::lock_guard<std::shared_mutex> lock(_lock);
 			_state = Task::STATE_CANCELED;
-			_scheduler = INVALID_SCHEDULER;
+			{
+				std::shared_ptr<TaskData> data = _data.lock();
+				std::weak_ptr<TaskData> tmp;
+				_data.swap(tmp);
+				data->Clear();
+			}
 
 			_wait_flag = 1u;
 		}
@@ -541,8 +537,8 @@ namespace anvil {
 		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
 
 		const bool will_yield = scheduler->_no_execution_on_wait ?
-			GetParent() != nullptr || GetNumberOfTasksExecutingOnThisThread() > 0 :	// Only call yield if Wait is called from inside of a Task
-			true;																	// Always yield
+			GetNumberOfTasksExecutingOnThisThread() > 0 :	// Only call yield if Wait is called from inside of a Task
+			true;											// Always yield
 
 #if ANVIL_DEBUG_TASKS
 		{
@@ -680,10 +676,10 @@ HANDLE_ERROR:
 			CatchException(std::move(std::current_exception()), false);
 		}
 #endif
-		Scheduler::ThreadDebugData* debug_data = _scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
+		Scheduler::ThreadDebugData* debug_data = _data.lock()->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 		if (debug_data) {
 			++debug_data->tasks_executing;
-			++_scheduler->_scheduler_debug.total_tasks_executing;
+			++_data.lock()->scheduler->_scheduler_debug.total_tasks_executing;
 		}
 
 #if ANVIL_DEBUG_TASKS
@@ -767,10 +763,10 @@ HANDLE_ERROR:
 				CatchException(std::move(std::current_exception()), false);
 			}
 
-			Scheduler::ThreadDebugData* debug_data = task._scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
+			Scheduler::ThreadDebugData* debug_data = task._data.lock()->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 			if (debug_data) {
 				--debug_data->tasks_executing;
-				--task._scheduler->_scheduler_debug.total_tasks_executing;
+				--task._data.lock()->scheduler->_scheduler_debug.total_tasks_executing;
 			}
 
 #if ANVIL_DEBUG_TASKS
@@ -781,12 +777,19 @@ HANDLE_ERROR:
 #endif
 
 			{
+
 				// Post-execution cleanup
 				std::lock_guard<std::shared_mutex> task_lock(task._lock);
 
-				task._scheduler = INVALID_SCHEDULER;
 				task._state = Task::STATE_COMPLETE;
 				task._wait_flag = 1u;
+
+				{
+					std::shared_ptr<TaskData> data = task._data.lock();
+					std::weak_ptr<TaskData> tmp;
+					task._data.swap(tmp);
+					data->Clear();
+				}
 			}
 
 			scheduler.TaskQueueNotify();
@@ -868,7 +871,7 @@ HANDLE_ERROR:
 		_task_queue_update.notify_all();
 	}
 
-	void Scheduler::RemoveNextTaskFromQueue(Task** tasks, uint32_t& count) throw() {
+	void Scheduler::RemoveNextTaskFromQueue(std::shared_ptr<TaskData>* tasks, uint32_t& count) throw() {
 #if ANVIL_TASK_DELAY_SCHEDULING
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
@@ -957,7 +960,7 @@ HANDLE_ERROR:
 		enum { MAX_TASKS = 32u };
 #endif
 		// Try to start the execution of a new task
-		Task* tasks[MAX_TASKS];
+		std::shared_ptr<TaskData> tasks[MAX_TASKS];
 		uint32_t task_count = static_cast<uint32_t>(_task_queue.size()) / _scheduler_debug.total_thread_count;
 		if (task_count < 1) task_count = 1u;
 		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
@@ -967,7 +970,11 @@ HANDLE_ERROR:
 		if (task_count > 0) {
 
 			for (uint32_t i = 0u; i < task_count; ++i) {
-				tasks[i]->Execute();
+				tasks[i]->task->Execute(); 
+				
+				// Delete task data
+				std::shared_ptr<TaskData> tmp;
+				tasks[i].swap(tmp);
 			}
 
 			return true;
@@ -1108,8 +1115,8 @@ HANDLE_ERROR:
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
-		std::sort(_task_queue.begin(), _task_queue.end(), [](const Task* lhs, const Task* rhs)->bool {
-			return lhs->_priority < rhs->_priority;
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const std::shared_ptr<TaskData>& lhs, const std::shared_ptr<TaskData>& rhs)->bool {
+			return lhs->task->_priority < rhs->task->_priority;
 		});
 	}
 
@@ -1131,21 +1138,25 @@ HANDLE_ERROR:
 	void Scheduler::Schedule(Task** tasks, const uint32_t count) {
 		const auto this_scheduler = this;
 
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 #if ANVIL_TASK_FIBERS
 		Task* const parent = g_thread_additional_data.current_fiber == nullptr ? nullptr : g_thread_additional_data.current_fiber->task;
 #else
 		Task* const parent = g_thread_additional_data.task_stack.empty() ? nullptr : g_thread_additional_data.task_stack.back();
 #endif
-#endif
+
+		std::vector<std::shared_ptr<TaskData>> task_data_tmp(count);
 
 		// Initial error checking and initialisation
 		size_t ready_count = 0u;
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
+
 			std::lock_guard<std::shared_mutex> task_lock(t._lock);
 
 			if (t._state != Task::STATE_INITIALISED) continue;
+
+			std::shared_ptr<TaskData> data(new TaskData());
+			task_data_tmp[i] = data;
 
 			// Change state
 			t._scheduled_flag = 1u;
@@ -1154,41 +1165,22 @@ HANDLE_ERROR:
 			t._state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
-			t._scheduler = this_scheduler;
+			t._data = data;
+			data->scheduler = this;
+			data->task = &t;
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 			t._exception = std::exception_ptr();
 #endif
 
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-			t._nesting_depth = 0u;
 			// Update the child / parent relationship between tasks
-			t._parent = parent;
+#if ANVIL_USE_PARENTCHILDREN
 			if (parent) {
-				anvil::Task* parent2;
-				{
-					std::lock_guard<std::shared_mutex> parent_lock(parent->_lock);
-#if ANVIL_TASK_PARENT
-					parent->_children.push_back(tasks[i]);
-#endif
-					++t._nesting_depth;
-					++parent->_fast_child_count;
-					++parent->_fast_recursive_child_count;
-					parent2 = parent->_parent;
-				}
-				while (parent2) {
-					std::lock_guard<std::shared_mutex> parent2_lock(parent2->_lock);
-					++t._nesting_depth;
-					++parent2->_fast_recursive_child_count;
-					parent2 = parent2->_parent;
-				}
+				std::lock_guard<std::shared_mutex> parent_lock(parent->_lock);
+				std::shared_ptr<TaskData> parent_data = parent->_data.lock();
+				data->parent = parent_data;
+				parent_data->children.push_back(data);
 			}
-#else
-#if ANVIL_TASK_FIBERS
-			t._nesting_depth = g_thread_additional_data.fiber_list.empty() ? 0u : 1u;
-#else
-			t._nesting_depth = g_thread_additional_data.task_stack.size();
-#endif
 #endif
 
 			// Calculate extended priority
@@ -1222,7 +1214,7 @@ HANDLE_ERROR:
 #endif
 
 			// Skip the task if initalisation failed
-			if (t._scheduler != this_scheduler) continue;
+			if (data->scheduler != this_scheduler) continue;
 #if ANVIL_TASK_DELAY_SCHEDULING
 			// If the task isn't ready to execute yet push it to the innactive queue
 			if (!t.IsReadyToExecute()) {
@@ -1233,9 +1225,7 @@ HANDLE_ERROR:
 #if ANVIL_DEBUG_TASKS
 			{
 				uint32_t parent_id = 0u;
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
 				if (parent) parent_id = parent->_debug_id;
-#endif
 				TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
 				g_debug_event_handler(nullptr, &e);
 			}
@@ -1252,7 +1242,7 @@ HANDLE_ERROR:
 				for (uint32_t i = 0u; i < count; ++i) {
 					if (tasks[i]->_schedule_valid) {
 						// Add to the active queue
-						_task_queue.push_back(tasks[i]);
+						_task_queue.push_back(task_data_tmp[i]);
 					}
 				}
 				// Sort task list by priority

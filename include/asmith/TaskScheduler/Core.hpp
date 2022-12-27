@@ -99,6 +99,7 @@
 
 namespace anvil {
 	class Task;
+	struct TaskData;
 	class Scheduler;
 }
 

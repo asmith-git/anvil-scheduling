@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <stdexcept>
+#include <memory>
 #include <shared_mutex>
 #include "asmith/TaskScheduler/Scheduler.hpp"
 
@@ -35,6 +36,8 @@
 	#include <windows.h>
 	#undef Yield
 #endif
+
+#define ANVIL_USE_PARENTCHILDREN (ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT)
 
 namespace anvil {
 #if ANVIL_DEBUG_TASKS
@@ -97,6 +100,25 @@ namespace anvil {
 #endif
 
 	/*!
+		\class TaskData
+		\author Adam G. Smith
+		\date December 2022
+		\copyright MIT License
+		\brief This structure contains the information that a Scheduler knows about a Task
+	*/
+	struct TaskData {
+		Task* task;
+		Scheduler* scheduler;			//!< Points to the scheduler handling this task, otherwise null
+#if ANVIL_USE_PARENTCHILDREN
+		std::weak_ptr<TaskData> parent;
+		std::vector<std::weak_ptr<TaskData>> children;
+#endif
+
+		TaskData();
+		void Clear();
+	};
+
+	/*!
 		\class Task
 		\author Adam G. Smith
 		\date December 2020
@@ -126,6 +148,7 @@ namespace anvil {
 		typedef Scheduler::Priority Priority;
 		typedef Scheduler::PriorityInteger PriorityInteger;
 		typedef Scheduler::PriorityValue PriorityValue;
+		typedef TaskData Data;
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
@@ -142,7 +165,8 @@ namespace anvil {
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
 		inline Scheduler* _GetScheduler() const throw() {
-			return _scheduler;
+			std::shared_ptr<TaskData> data = _data.lock();
+			return data ? data->scheduler : nullptr;
 		}
 
 		/*!
@@ -153,22 +177,13 @@ namespace anvil {
 		void SetException(std::exception_ptr exception);
 
 		mutable std::shared_mutex _lock;
-#if ANVIL_TASK_PARENT
-		std::vector<Task*> _children;
-#endif
-		Scheduler* _scheduler;			//!< Points to the scheduler handling this task, otherwise null
+		std::weak_ptr<TaskData> _data;
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
 #if ANVIL_DEBUG_TASKS
 		uint32_t _debug_id;
 #endif
-#if ANVIL_TASK_FAST_CHILD_COUNT || ANVIL_TASK_PARENT
-		Task* _parent;
-		uint16_t _fast_child_count;
-		uint16_t _fast_recursive_child_count;
-#endif
-		uint16_t _nesting_depth;
 		PriorityValue _priority;			//!< Stores the scheduling priority of the task
 		State _state;						//!< Stores the current state of the task
 		struct {
@@ -185,7 +200,7 @@ namespace anvil {
 			\param max_sleep_milliseconds The longest period of time the thread should sleep for before checking the wait condition again.
 		*/
 		inline void Yield(const std::function<bool()>& condition, uint32_t max_sleep_milliseconds = 33u) {
-			Scheduler* scheduler = _scheduler;
+			Scheduler* scheduler = _GetScheduler();
 			if (scheduler) {
 				scheduler->Yield(condition, max_sleep_milliseconds);
 			} else {
@@ -300,23 +315,34 @@ namespace anvil {
 			\return The parent of this task or null if there is no known parent
 		*/
 		inline Task* GetParent() const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-			return _parent;
-#endif
+#if ANVIL_USE_PARENTCHILDREN
+			std::shared_ptr<TaskData> data = _data.lock();
+			if (data) {
+				std::shared_ptr<TaskData> tmp = data->parent.lock();
+				if (tmp) return tmp->task;
+			}
+#else
 			return nullptr;
+#endif
 		}
 
 		/*!
 			\return The a children of this task
 		*/
 		inline std::vector<Task*> GetChildren() const throw() {
-#if ANVIL_TASK_PARENT
-			std::shared_lock<std::shared_mutex> lock(_lock);
-			std::vector<Task*> tmp = _children;
-			return tmp;
-#else
-			return std::vector<Task*>();
+			std::vector<Task*> children;
+#if ANVIL_USE_PARENTCHILDREN
+			std::lock_guard<std::shared_mutex> lock(_lock);
+			std::shared_ptr<TaskData> data = _data.lock();
+			if (data) {
+				for (std::weak_ptr<TaskData>& i : data->children) {
+					std::shared_ptr<TaskData> tmp = i.lock();
+					Task* t = tmp->task;
+					if (t) children.push_back(t);
+				}
+			}
 #endif
+			return children;
 		}
 
 		/*!
@@ -324,19 +350,24 @@ namespace anvil {
 			\return The number of children this task has
 		*/
 		inline size_t GetChildCount(bool aproximate = false) const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-			return _fast_child_count;
+#if ANVIL_USE_PARENTCHILDREN
+			if (aproximate) {
+				std::lock_guard<std::shared_mutex> lock(_lock);
+				std::shared_ptr<TaskData> data = _data.lock();
+				return data ? data->children.size() : 0;
+			} else {
+				return GetChildren().size();
+			}
 #else
 			return 0u;
 #endif
 		}
 
 		inline size_t GetRecursiveChildCount(bool aproximate = false) const throw() {
-#if ANVIL_TASK_PARENT || ANVIL_TASK_FAST_CHILD_COUNT
-			return _fast_recursive_child_count;
-#else
-			return 0u;
-#endif
+			std::vector<Task*> children = GetChildren();
+			size_t count = children.size();
+			for (Task* i : children) count += i->GetRecursiveChildCount(aproximate);
+			return count;
 		}
 
 		/*!
@@ -344,7 +375,10 @@ namespace anvil {
 			\details This will be incorrect if ANVIL_TASK_PARENT or ANVIL_TASK_FAST_CHILD_COUNT are both disabled and ANVIL_TASK_FIBERS is enabled
 		*/
 		inline size_t GetNestingDepth() const throw() {
-			return _nesting_depth;
+			size_t depth = 0u;
+			Task* parent = GetParent();
+			if (parent) depth += parent->GetNestingDepth() + 1u;
+			return depth;
 		}
 
 		/*!
