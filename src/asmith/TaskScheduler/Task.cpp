@@ -1016,7 +1016,7 @@ HANDLE_ERROR:
 			if (t->_state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
 			t->_state = Task::STATE_BLOCKED;
 #if ANVIL_TASK_CALLBACKS
-			t.OnBlock();
+			t->OnBlock();
 #endif
 		}
 
