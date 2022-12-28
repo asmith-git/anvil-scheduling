@@ -359,31 +359,22 @@ namespace anvil {
 
 	TaskSchedulingData::TaskSchedulingData() :
 		task(nullptr),
-		scheduler(nullptr)
+		scheduler(nullptr),
+		priority(Priority::PRIORITY_MIDDLE),
+		state(Task::STATE_INITIALISED),
+		scheduled_flag(0u),
+		wait_flag(0u)
 	{}
-
-	void TaskSchedulingData::Clear() {
-		task = nullptr;
-		scheduler = nullptr;
-#if ANVIL_USE_PARENTCHILDREN
-		children.clear();
-		WeakSchedulingPtr tmp;
-		parent.swap(tmp);
-#endif
-	}
 
 	// Task
 
-	Task::Task() :
-		_priority(Priority::PRIORITY_MIDDLE),
-		_state(STATE_INITIALISED),
-		_scheduled_flag(0u),
-		_wait_flag(0u)
-	{
+	Task::Task()  {
+		_data.reset(new TaskSchedulingData());
+		_data->task = this;
 #if ANVIL_DEBUG_TASKS
-		_debug_id = g_task_debug_id++;
+		_data->debug_id = g_task_debug_id++;
 		{
-			TaskDebugEvent e = TaskDebugEvent::CreateEvent(_debug_id, this);
+			TaskDebugEvent e = TaskDebugEvent::CreateEvent(_data->debug_id, this);
 			g_debug_event_handler(nullptr, &e);
 		}
 #endif
@@ -391,24 +382,27 @@ namespace anvil {
 
 	Task::~Task() {
 		{
-			if (_state == STATE_SCHEDULED || _state == STATE_EXECUTING || _state == STATE_BLOCKED) {
+			const State s = GetState();
+			if (s == STATE_SCHEDULED || s == STATE_EXECUTING || s == STATE_BLOCKED) {
 				bool not_finished = true;
 				while (not_finished) {
 					// Wait for task to complete
-					StrongSchedulingPtr data = _data.lock();
+					StrongSchedulingPtr data = _data;
 					if (data) {
-						std::shared_lock<std::shared_mutex> lock(_lock);
-						not_finished = _wait_flag == 0u;
+						std::shared_lock<std::shared_mutex> lock(data->lock);
+						not_finished = data->wait_flag == 0u;
 					} else {
 						break;
 					}
 				}
 			}
+
+			_data->task = nullptr;
 		}
 
 #if ANVIL_DEBUG_TASKS
 		{
-			TaskDebugEvent e = TaskDebugEvent::DestroyEvent(_debug_id);
+			TaskDebugEvent e = TaskDebugEvent::DestroyEvent(_data->debug_id);
 			g_debug_event_handler(nullptr, &e);
 		}
 #endif
@@ -461,7 +455,7 @@ namespace anvil {
 
 	void Task::SetException(std::exception_ptr exception) {
 #if ANVIL_TASK_HAS_EXCEPTIONS
-		_exception = exception;
+		_data->exception = exception;
 #endif
 	}
 
@@ -476,7 +470,7 @@ namespace anvil {
 			std::lock_guard<std::shared_mutex> lock(scheduler->_task_queue_mutex);
 
 			// If the state is not scheduled then it cannot be canceled
-			if (_state != STATE_SCHEDULED) return false;
+			if (GetState() != STATE_SCHEDULED) return false;
 
 			// Remove the task from the queue
 			for (auto i = scheduler->_task_queue.begin(); i < scheduler->_task_queue.end(); ++i) {
@@ -497,10 +491,10 @@ namespace anvil {
 #endif
 		}
 		{
-			std::lock_guard<std::shared_mutex> task_lock(_lock);
+			std::lock_guard<std::shared_mutex> task_lock(_data->lock);
 #if ANVIL_DEBUG_TASKS
 			{
-				TaskDebugEvent e = TaskDebugEvent::CancelEvent(_debug_id);
+				TaskDebugEvent e = TaskDebugEvent::CancelEvent(_data->debug_id);
 				g_debug_event_handler(nullptr, &e);
 			}
 #endif
@@ -515,16 +509,10 @@ namespace anvil {
 			
 #endif
 			// State change and cleanup
-			std::lock_guard<std::shared_mutex> lock(_lock);
-			_state = Task::STATE_CANCELED;
-			{
-				StrongSchedulingPtr data = _data.lock();
-				WeakSchedulingPtr tmp;
-				_data.swap(tmp);
-				data->Clear();
-			}
-
-			_wait_flag = 1u;
+			std::lock_guard<std::shared_mutex> lock(_data->lock);
+			_data->state = Task::STATE_CANCELED;
+			_data->scheduler = nullptr;
+			_data->wait_flag = 1u;
 		}
 
 		// Notify anythign waiting for changes to the task queue
@@ -534,7 +522,7 @@ namespace anvil {
 
 	void Task::Wait() {
 		Scheduler* scheduler = _GetScheduler();
-		if (scheduler == nullptr || _state == Task::STATE_COMPLETE || _state == Task::STATE_CANCELED) return;
+		if (scheduler == nullptr || _data->state == Task::STATE_COMPLETE || _data->state == Task::STATE_CANCELED) return;
 
 		const bool will_yield = scheduler->_no_execution_on_wait ?
 			GetNumberOfTasksExecutingOnThisThread() > 0 :	// Only call yield if Wait is called from inside of a Task
@@ -542,15 +530,15 @@ namespace anvil {
 
 #if ANVIL_DEBUG_TASKS
 		{
-			TaskDebugEvent e = TaskDebugEvent::PauseEvent(_debug_id, will_yield);
+			TaskDebugEvent e = TaskDebugEvent::PauseEvent(_data->debug_id, will_yield);
 			g_debug_event_handler(nullptr, &e);
 		}
 #endif
 
 		const auto YieldCondition = [this]()->bool {
-			std::shared_lock<std::shared_mutex> task_lock(_lock);
-			if (_state != STATE_CANCELED && _state != STATE_COMPLETE) return false;
-			return _wait_flag == 1u;
+			std::shared_lock<std::shared_mutex> task_lock(_data->lock);
+			if (_data->state != STATE_CANCELED && _data->state != STATE_COMPLETE) return false;
+			return _data->wait_flag == 1u;
 		};
 
 		if (will_yield) {
@@ -568,16 +556,16 @@ namespace anvil {
 
 #if ANVIL_DEBUG_TASKS
 		{
-			TaskDebugEvent e = TaskDebugEvent::ResumeEvent(_debug_id);
+			TaskDebugEvent e = TaskDebugEvent::ResumeEvent(_data->debug_id);
 			g_debug_event_handler(nullptr, &e);
 		}
 #endif
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		// Rethrow a caught exception
-		if (_exception) {
-			std::exception_ptr tmp = _exception;
-			_exception = std::exception_ptr();
+		if (_data->exception) {
+			std::exception_ptr tmp = _data->exception;
+			_data->exception = std::exception_ptr();
 			std::rethrow_exception(tmp);
 		}
 #endif
@@ -591,8 +579,8 @@ namespace anvil {
 		std::exception_ptr exception = nullptr;
 		Scheduler* scheduler = _GetScheduler();
 		if (scheduler) {
-			if (_state == STATE_SCHEDULED) {
-				_priority = priority;
+			if (_data->state == STATE_SCHEDULED) {
+				_data->priority = priority;
 				std::lock_guard<std::shared_mutex> lock(scheduler->_task_queue_mutex);
 				scheduler->SortTaskQueue();
 			} else {
@@ -600,7 +588,7 @@ namespace anvil {
 				goto HANDLE_ERROR;
 			}
 		} else {
-			_priority = priority;
+			_data->priority = priority;
 		}
 
 		return;
@@ -619,13 +607,13 @@ HANDLE_ERROR:
 			if (set_exception) this->SetException(std::move(exception));
 #endif
 			// If the exception was caught after the task finished execution
-			if (_state == STATE_COMPLETE || _state == STATE_CANCELED) {
+			if (_data->state == STATE_COMPLETE || _data->state == STATE_CANCELED) {
 				// Do nothing
 
 			// If the exception was caught before or during execution
 			} else {			
 				// Cancel the Task
-				_state = Task::STATE_CANCELED;
+				_data->state = Task::STATE_CANCELED;
 #if ANVIL_TASK_CALLBACKS
 				// Call the cancelation callback
 				try {
@@ -676,15 +664,15 @@ HANDLE_ERROR:
 			CatchException(std::move(std::current_exception()), false);
 		}
 #endif
-		Scheduler::ThreadDebugData* debug_data = _data.lock()->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
+		Scheduler::ThreadDebugData* debug_data = _data->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 		if (debug_data) {
 			++debug_data->tasks_executing;
-			++_data.lock()->scheduler->_scheduler_debug.total_tasks_executing;
+			++_data->scheduler->_scheduler_debug.total_tasks_executing;
 		}
 
 #if ANVIL_DEBUG_TASKS
 		{
-			TaskDebugEvent e = TaskDebugEvent::ExecuteBeginEvent(_debug_id);
+			TaskDebugEvent e = TaskDebugEvent::ExecuteBeginEvent(_data->debug_id);
 			g_debug_event_handler(nullptr, &e);
 		}
 #endif
@@ -712,13 +700,13 @@ HANDLE_ERROR:
 				// Handle the exception
 				if (set_exception) task.SetException(std::move(exception));
 				// If the exception was caught after the task finished execution
-				if (task._state == STATE_COMPLETE || task._state == STATE_CANCELED) {
+				if (task._data->state == STATE_COMPLETE || task._data->state == STATE_CANCELED) {
 					// Do nothing
 
 				// If the exception was caught before or during execution
 				} else {
 					// Cancel the Task
-					task._state = Task::STATE_CANCELED;
+					task._data->state = Task::STATE_CANCELED;
 #if ANVIL_TASK_CALLBACKS
 					// Call the cancelation callback
 					try {
@@ -737,12 +725,12 @@ HANDLE_ERROR:
 			};
 
 			// If an error hasn't been detected yet
-			if (task._state != Task::STATE_CANCELED) {
+			if (task._data->state != Task::STATE_CANCELED) {
 
 				// Execute the task
 				{
-					std::lock_guard<std::shared_mutex> task_lock(task._lock);
-					task._state = Task::STATE_EXECUTING;
+					std::lock_guard<std::shared_mutex> task_lock(task._data->lock);
+					task._data->state = Task::STATE_EXECUTING;
 				}
 				try {
 					task.OnExecution();
@@ -763,15 +751,15 @@ HANDLE_ERROR:
 				CatchException(std::move(std::current_exception()), false);
 			}
 
-			Scheduler::ThreadDebugData* debug_data = task._data.lock()->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
+			Scheduler::ThreadDebugData* debug_data = task._data->scheduler->GetDebugDataForThread(g_thread_additional_data.scheduler_index);
 			if (debug_data) {
 				--debug_data->tasks_executing;
-				--task._data.lock()->scheduler->_scheduler_debug.total_tasks_executing;
+				--task._data->scheduler->_scheduler_debug.total_tasks_executing;
 			}
 
 #if ANVIL_DEBUG_TASKS
 			{
-				TaskDebugEvent e = TaskDebugEvent::ExecuteEndEvent(task._debug_id);
+				TaskDebugEvent e = TaskDebugEvent::ExecuteEndEvent(task._data->debug_id);
 				g_debug_event_handler(nullptr, &e);
 			}
 #endif
@@ -779,17 +767,11 @@ HANDLE_ERROR:
 			{
 
 				// Post-execution cleanup
-				std::lock_guard<std::shared_mutex> task_lock(task._lock);
+				std::lock_guard<std::shared_mutex> task_lock(task._data->lock);
 
-				task._state = Task::STATE_COMPLETE;
-				task._wait_flag = 1u;
-
-				{
-					StrongSchedulingPtr data = task._data.lock();
-					WeakSchedulingPtr tmp;
-					task._data.swap(tmp);
-					data->Clear();
-				}
+				task._data->state = Task::STATE_COMPLETE;
+				task._data->wait_flag = 1u;
+				task._data->scheduler = nullptr;
 			}
 
 			scheduler.TaskQueueNotify();
@@ -1017,11 +999,11 @@ HANDLE_ERROR:
 		const float debug_time = GetDebugTime();
 #endif
 		if (t) {
-			std::lock_guard<std::shared_mutex> lock(t->_lock);
+			std::lock_guard<std::shared_mutex> lock(t->_data->lock);
 
 			// State change
-			if (t->_state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
-			t->_state = Task::STATE_BLOCKED;
+			if (t->_data->state != Task::STATE_EXECUTING) throw std::runtime_error("anvil::Scheduler::Yield : Task cannot yield unless it is in STATE_EXECUTING");
+			t->_data->state = Task::STATE_BLOCKED;
 #if ANVIL_TASK_CALLBACKS
 			t->OnBlock();
 #endif
@@ -1103,10 +1085,10 @@ HANDLE_ERROR:
 
 		// If this function is being called by a task
 		if (t) {
-			std::lock_guard<std::shared_mutex> lock(t->_lock);
+			std::lock_guard<std::shared_mutex> lock(t->_data->lock);
 
 			// State change
-			t->_state = Task::STATE_EXECUTING;
+			t->_data->state = Task::STATE_EXECUTING;
 
 #if ANVIL_TASK_CALLBACKS
 			t->OnResume();
@@ -1116,7 +1098,7 @@ HANDLE_ERROR:
 
 	void Scheduler::SortTaskQueue() throw() {
 		std::sort(_task_queue.begin(), _task_queue.end(), [](const StrongSchedulingPtr& lhs, const StrongSchedulingPtr& rhs)->bool {
-			return lhs->task->_priority < rhs->task->_priority;
+			return lhs->task->_data->priority < rhs->task->_data->priority;
 		});
 	}
 
@@ -1151,18 +1133,18 @@ HANDLE_ERROR:
 		for (uint32_t i = 0u; i < count; ++i) {
 			Task& t = *tasks[i];
 
-			std::lock_guard<std::shared_mutex> task_lock(t._lock);
+			std::lock_guard<std::shared_mutex> task_lock(t._data->lock);
 
-			if (t._state != Task::STATE_INITIALISED) continue;
+			if (t._data->state != Task::STATE_INITIALISED) continue;
 
 			StrongSchedulingPtr data(new TaskSchedulingData());
 			task_data_tmp[i] = data;
 
 			// Change state
-			t._scheduled_flag = 1u;
-			t._wait_flag = 0u;
-			t._schedule_valid = 0u;
-			t._state = Task::STATE_SCHEDULED;
+			t._data->scheduled_flag = 1u;
+			t._data->wait_flag = 0u;
+			t._data->schedule_valid = 0u;
+			t._data->state = Task::STATE_SCHEDULED;
 
 			// Initialise scheduling data
 			t._data = data;
@@ -1170,14 +1152,14 @@ HANDLE_ERROR:
 			data->task = &t;
 
 #if ANVIL_TASK_HAS_EXCEPTIONS
-			t._exception = std::exception_ptr();
+			t._data->exception = std::exception_ptr();
 #endif
 
 			// Update the child / parent relationship between tasks
 #if ANVIL_USE_PARENTCHILDREN
 			if (parent) {
-				std::lock_guard<std::shared_mutex> parent_lock(parent->_lock);
-				StrongSchedulingPtr parent_data = parent->_data.lock();
+				std::lock_guard<std::shared_mutex> parent_lock(parent->_data->lock);
+				StrongSchedulingPtr parent_data = parent->_data;
 				data->parent = parent_data;
 				parent_data->children.push_back(data);
 			}
@@ -1225,12 +1207,12 @@ HANDLE_ERROR:
 #if ANVIL_DEBUG_TASKS
 			{
 				uint32_t parent_id = 0u;
-				if (parent) parent_id = parent->_debug_id;
-				TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._debug_id, parent_id, _debug_id);
+				if (parent) parent_id = parent->_data->debug_id;
+				TaskDebugEvent e = TaskDebugEvent::ScheduleEvent(t._data->debug_id, parent_id, _debug_id);
 				g_debug_event_handler(nullptr, &e);
 			}
 #endif
-			t._schedule_valid = 1u;
+			t._data->schedule_valid = 1u;
 			++ready_count;
 		}
 
@@ -1240,7 +1222,7 @@ HANDLE_ERROR:
 				std::lock_guard<std::shared_mutex> lock(_task_queue_mutex);
 				_task_queue.reserve(_task_queue.size() + ready_count);
 				for (uint32_t i = 0u; i < count; ++i) {
-					if (tasks[i]->_schedule_valid) {
+					if (tasks[i]->_data->schedule_valid) {
 						// Add to the active queue
 						_task_queue.push_back(task_data_tmp[i]);
 					}

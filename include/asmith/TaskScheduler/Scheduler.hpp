@@ -167,6 +167,7 @@ namespace anvil {
 #endif
 	public:
 		friend Task;
+		friend TaskSchedulingData;
 
 		Scheduler(size_t thread_count);
 		virtual ~Scheduler();

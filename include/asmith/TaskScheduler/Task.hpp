@@ -107,15 +107,32 @@ namespace anvil {
 		\brief This structure contains the information that a Scheduler knows about a Task
 	*/
 	struct TaskSchedulingData {
+		typedef Scheduler::Priority Priority;
+		typedef Scheduler::PriorityInteger PriorityInteger;
+		typedef Scheduler::PriorityValue PriorityValue;
+
+		mutable std::shared_mutex lock;
 		Task* task;
 		Scheduler* scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #if ANVIL_USE_PARENTCHILDREN
 		WeakSchedulingPtr parent;
 		std::vector<WeakSchedulingPtr> children;
 #endif
+#if ANVIL_TASK_HAS_EXCEPTIONS
+		std::exception_ptr exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
+#endif
+#if ANVIL_DEBUG_TASKS
+		uint32_t debug_id;
+#endif
+		PriorityValue priority;			//!< Stores the scheduling priority of the task
+		struct {
+			uint8_t state : 4;				//!< Stores the current state of the task
+			uint8_t scheduled_flag : 1;		//!< Set to 1 when the task has been scheduled
+			uint8_t wait_flag : 1;			//!< Set to 1 when it is okay to exit out of Task::Wait()
+			uint8_t schedule_valid : 1;		//!< Set to 1 when when a scheduler has decided the task is valid
+		};
 
 		TaskSchedulingData();
-		void Clear();
 	};
 
 	/*!
@@ -165,8 +182,7 @@ namespace anvil {
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
 		inline Scheduler* _GetScheduler() const throw() {
-			StrongSchedulingPtr data = _data.lock();
-			return data ? data->scheduler : nullptr;
+			return _data->scheduler;
 		}
 
 		/*!
@@ -176,21 +192,7 @@ namespace anvil {
 
 		void SetException(std::exception_ptr exception);
 
-		mutable std::shared_mutex _lock;
-		WeakSchedulingPtr _data;
-#if ANVIL_TASK_HAS_EXCEPTIONS
-		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
-#endif
-#if ANVIL_DEBUG_TASKS
-		uint32_t _debug_id;
-#endif
-		PriorityValue _priority;			//!< Stores the scheduling priority of the task
-		State _state;						//!< Stores the current state of the task
-		struct {
-			uint8_t _scheduled_flag : 1;		//!< Set to 1 when the task has been scheduled
-			uint8_t _wait_flag : 1;				//!< Set to 1 when it is okay to exit out of Task::Wait()
-			uint8_t _schedule_valid : 1;		//!< Set to 1 when when a scheduler has decided the task is valid
-		};
+		StrongSchedulingPtr _data;
 	protected:
 		/*!
 			\brief Return control to the scheduler while the task is waiting for something.
@@ -294,21 +296,21 @@ namespace anvil {
 			\return True if Task::Wait() can be called.
 		*/
 		inline bool IsWaitable() const throw() {
-			return _state != STATE_INITIALISED;
+			return GetState() != STATE_INITIALISED;
 		}
 
 		/*!
 			\return The current state of the Task.
 		*/
 		inline State GetState() const throw() {
-			return static_cast<State>(_state);
+			return static_cast<State>(_data->state);
 		}
 
 		/*!
 			\return The current priority of the Task.
 		*/
 		inline Priority GetPriority() const throw() {
-			return static_cast<Priority>(_priority);
+			return static_cast<Priority>(_data->priority);
 		}
 
 		/*!
@@ -316,9 +318,9 @@ namespace anvil {
 		*/
 		inline Task* GetParent() const throw() {
 #if ANVIL_USE_PARENTCHILDREN
-			StrongSchedulingPtr data = _data.lock();
-			if (data) {
-				StrongSchedulingPtr tmp = data->parent.lock();
+			if (_data) {
+				std::lock_guard<std::shared_mutex> lock(_data->lock);
+				StrongSchedulingPtr tmp = _data->parent.lock();
 				if (tmp) return tmp->task;
 			}
 #else
@@ -332,10 +334,9 @@ namespace anvil {
 		inline std::vector<Task*> GetChildren() const throw() {
 			std::vector<Task*> children;
 #if ANVIL_USE_PARENTCHILDREN
-			std::lock_guard<std::shared_mutex> lock(_lock);
-			StrongSchedulingPtr data = _data.lock();
-			if (data) {
-				for (WeakSchedulingPtr& i : data->children) {
+			std::lock_guard<std::shared_mutex> lock(_data->lock);
+			if (_data) {
+				for (WeakSchedulingPtr& i : _data->children) {
 					StrongSchedulingPtr tmp = i.lock();
 					Task* t = tmp->task;
 					if (t) children.push_back(t);
@@ -352,9 +353,12 @@ namespace anvil {
 		inline size_t GetChildCount(bool aproximate = false) const throw() {
 #if ANVIL_USE_PARENTCHILDREN
 			if (aproximate) {
-				std::lock_guard<std::shared_mutex> lock(_lock);
-				StrongSchedulingPtr data = _data.lock();
-				return data ? data->children.size() : 0;
+				if (_data) {
+					std::lock_guard<std::shared_mutex> lock(_data->lock);
+					return _data->children.size();
+				} else {
+					return 0u;
+				}
 			} else {
 				return GetChildren().size();
 			}
@@ -366,7 +370,7 @@ namespace anvil {
 		inline size_t GetRecursiveChildCount(bool aproximate = false) const throw() {
 			std::vector<Task*> children = GetChildren();
 			size_t count = children.size();
-			for (Task* i : children) count += i->GetRecursiveChildCount(aproximate);
+			for (Task* i : children) count += i->GetRecursiveChildCount(aproximate); //! \bug Small chance of task completing and being destroyed while this is executing
 			return count;
 		}
 
@@ -377,7 +381,7 @@ namespace anvil {
 		inline size_t GetNestingDepth() const throw() {
 			size_t depth = 0u;
 			Task* parent = GetParent();
-			if (parent) depth += parent->GetNestingDepth() + 1u;
+			if (parent) depth += parent->GetNestingDepth() + 1u; //! \bug Small chance of task completing and being destroyed while this is executing
 			return depth;
 		}
 
@@ -412,7 +416,7 @@ namespace anvil {
 #if ANVIL_DEBUG_TASKS
 		void PrintDebugMessage(const char* message) const;
 
-		inline uint64_t GetDebugID() const { return _debug_id; }
+		inline uint64_t GetDebugID() const { return _data->debug_id; }
 #endif
 
 	};
