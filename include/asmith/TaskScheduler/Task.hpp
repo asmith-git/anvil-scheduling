@@ -100,21 +100,21 @@ namespace anvil {
 #endif
 
 	/*!
-		\class TaskData
+		\class TaskSchedulingData
 		\author Adam G. Smith
 		\date December 2022
 		\copyright MIT License
 		\brief This structure contains the information that a Scheduler knows about a Task
 	*/
-	struct TaskData {
+	struct TaskSchedulingData {
 		Task* task;
 		Scheduler* scheduler;			//!< Points to the scheduler handling this task, otherwise null
 #if ANVIL_USE_PARENTCHILDREN
-		std::weak_ptr<TaskData> parent;
-		std::vector<std::weak_ptr<TaskData>> children;
+		WeakSchedulingPtr parent;
+		std::vector<WeakSchedulingPtr> children;
 #endif
 
-		TaskData();
+		TaskSchedulingData();
 		void Clear();
 	};
 
@@ -148,7 +148,7 @@ namespace anvil {
 		typedef Scheduler::Priority Priority;
 		typedef Scheduler::PriorityInteger PriorityInteger;
 		typedef Scheduler::PriorityValue PriorityValue;
-		typedef TaskData Data;
+		typedef TaskSchedulingData Data;
 	private:
 		Task(Task&&) = delete;
 		Task(const Task&) = delete;
@@ -165,7 +165,7 @@ namespace anvil {
 			\return Pointer to an attached scheduler, nullptr if none 
 		*/
 		inline Scheduler* _GetScheduler() const throw() {
-			std::shared_ptr<TaskData> data = _data.lock();
+			StrongSchedulingPtr data = _data.lock();
 			return data ? data->scheduler : nullptr;
 		}
 
@@ -177,7 +177,7 @@ namespace anvil {
 		void SetException(std::exception_ptr exception);
 
 		mutable std::shared_mutex _lock;
-		std::weak_ptr<TaskData> _data;
+		WeakSchedulingPtr _data;
 #if ANVIL_TASK_HAS_EXCEPTIONS
 		std::exception_ptr _exception;	//!< Holds an exception that is caught during execution, thrown when wait is called
 #endif
@@ -316,9 +316,9 @@ namespace anvil {
 		*/
 		inline Task* GetParent() const throw() {
 #if ANVIL_USE_PARENTCHILDREN
-			std::shared_ptr<TaskData> data = _data.lock();
+			StrongSchedulingPtr data = _data.lock();
 			if (data) {
-				std::shared_ptr<TaskData> tmp = data->parent.lock();
+				StrongSchedulingPtr tmp = data->parent.lock();
 				if (tmp) return tmp->task;
 			}
 #else
@@ -333,10 +333,10 @@ namespace anvil {
 			std::vector<Task*> children;
 #if ANVIL_USE_PARENTCHILDREN
 			std::lock_guard<std::shared_mutex> lock(_lock);
-			std::shared_ptr<TaskData> data = _data.lock();
+			StrongSchedulingPtr data = _data.lock();
 			if (data) {
-				for (std::weak_ptr<TaskData>& i : data->children) {
-					std::shared_ptr<TaskData> tmp = i.lock();
+				for (WeakSchedulingPtr& i : data->children) {
+					StrongSchedulingPtr tmp = i.lock();
 					Task* t = tmp->task;
 					if (t) children.push_back(t);
 				}
@@ -353,7 +353,7 @@ namespace anvil {
 #if ANVIL_USE_PARENTCHILDREN
 			if (aproximate) {
 				std::lock_guard<std::shared_mutex> lock(_lock);
-				std::shared_ptr<TaskData> data = _data.lock();
+				StrongSchedulingPtr data = _data.lock();
 				return data ? data->children.size() : 0;
 			} else {
 				return GetChildren().size();

@@ -355,19 +355,19 @@ namespace anvil {
 
 #define INVALID_SCHEDULER nullptr
 
-	// Task::TaskData
+	// Task::TaskSchedulingData
 
-	TaskData::TaskData() :
+	TaskSchedulingData::TaskSchedulingData() :
 		task(nullptr),
 		scheduler(nullptr)
 	{}
 
-	void TaskData::Clear() {
+	void TaskSchedulingData::Clear() {
 		task = nullptr;
 		scheduler = nullptr;
 #if ANVIL_USE_PARENTCHILDREN
 		children.clear();
-		std::weak_ptr<TaskData> tmp;
+		WeakSchedulingPtr tmp;
 		parent.swap(tmp);
 #endif
 	}
@@ -395,7 +395,7 @@ namespace anvil {
 				bool not_finished = true;
 				while (not_finished) {
 					// Wait for task to complete
-					std::shared_ptr<TaskData> data = _data.lock();
+					StrongSchedulingPtr data = _data.lock();
 					if (data) {
 						std::shared_lock<std::shared_mutex> lock(_lock);
 						not_finished = _wait_flag == 0u;
@@ -518,8 +518,8 @@ namespace anvil {
 			std::lock_guard<std::shared_mutex> lock(_lock);
 			_state = Task::STATE_CANCELED;
 			{
-				std::shared_ptr<TaskData> data = _data.lock();
-				std::weak_ptr<TaskData> tmp;
+				StrongSchedulingPtr data = _data.lock();
+				WeakSchedulingPtr tmp;
 				_data.swap(tmp);
 				data->Clear();
 			}
@@ -785,8 +785,8 @@ HANDLE_ERROR:
 				task._wait_flag = 1u;
 
 				{
-					std::shared_ptr<TaskData> data = task._data.lock();
-					std::weak_ptr<TaskData> tmp;
+					StrongSchedulingPtr data = task._data.lock();
+					WeakSchedulingPtr tmp;
 					task._data.swap(tmp);
 					data->Clear();
 				}
@@ -871,7 +871,7 @@ HANDLE_ERROR:
 		_task_queue_update.notify_all();
 	}
 
-	void Scheduler::RemoveNextTaskFromQueue(std::shared_ptr<TaskData>* tasks, uint32_t& count) throw() {
+	void Scheduler::RemoveNextTaskFromQueue(StrongSchedulingPtr* tasks, uint32_t& count) throw() {
 #if ANVIL_TASK_DELAY_SCHEDULING
 		// Check if there are tasks before locking the queue
 		// Avoids overhead of locking during periods of low activity
@@ -960,7 +960,7 @@ HANDLE_ERROR:
 		enum { MAX_TASKS = 32u };
 #endif
 		// Try to start the execution of a new task
-		std::shared_ptr<TaskData> tasks[MAX_TASKS];
+		StrongSchedulingPtr tasks[MAX_TASKS];
 		uint32_t task_count = static_cast<uint32_t>(_task_queue.size()) / _scheduler_debug.total_thread_count;
 		if (task_count < 1) task_count = 1u;
 		if (task_count > MAX_TASKS) task_count = MAX_TASKS;
@@ -973,7 +973,7 @@ HANDLE_ERROR:
 				tasks[i]->task->Execute(); 
 				
 				// Delete task data
-				std::shared_ptr<TaskData> tmp;
+				StrongSchedulingPtr tmp;
 				tasks[i].swap(tmp);
 			}
 
@@ -1115,7 +1115,7 @@ HANDLE_ERROR:
 	}
 
 	void Scheduler::SortTaskQueue() throw() {
-		std::sort(_task_queue.begin(), _task_queue.end(), [](const std::shared_ptr<TaskData>& lhs, const std::shared_ptr<TaskData>& rhs)->bool {
+		std::sort(_task_queue.begin(), _task_queue.end(), [](const StrongSchedulingPtr& lhs, const StrongSchedulingPtr& rhs)->bool {
 			return lhs->task->_priority < rhs->task->_priority;
 		});
 	}
@@ -1144,7 +1144,7 @@ HANDLE_ERROR:
 		Task* const parent = g_thread_additional_data.task_stack.empty() ? nullptr : g_thread_additional_data.task_stack.back();
 #endif
 
-		std::vector<std::shared_ptr<TaskData>> task_data_tmp(count);
+		std::vector<StrongSchedulingPtr> task_data_tmp(count);
 
 		// Initial error checking and initialisation
 		size_t ready_count = 0u;
@@ -1155,7 +1155,7 @@ HANDLE_ERROR:
 
 			if (t._state != Task::STATE_INITIALISED) continue;
 
-			std::shared_ptr<TaskData> data(new TaskData());
+			StrongSchedulingPtr data(new TaskSchedulingData());
 			task_data_tmp[i] = data;
 
 			// Change state
@@ -1177,7 +1177,7 @@ HANDLE_ERROR:
 #if ANVIL_USE_PARENTCHILDREN
 			if (parent) {
 				std::lock_guard<std::shared_mutex> parent_lock(parent->_lock);
-				std::shared_ptr<TaskData> parent_data = parent->_data.lock();
+				StrongSchedulingPtr parent_data = parent->_data.lock();
 				data->parent = parent_data;
 				parent_data->children.push_back(data);
 			}
